@@ -1530,6 +1530,16 @@ int RuntimeMain(int argc, char** argv) {
     }
 }
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#if TARGET_OS_TV
+// SDL's tvOS main wrapper creates the UIKit application delegate and starts
+// the platform event loop before entering RuntimeMain. A plain desktop main()
+// can compile for Apple TV but will not correctly launch as a tvOS app.
+#include <SDL3/SDL_main.h>
+#endif
+#endif
+
 int main(int argc, char** argv) {
     return RuntimeMain(argc, argv);
 }
