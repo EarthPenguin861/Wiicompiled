@@ -286,6 +286,18 @@ function(mkw_configure_product target)
         endforeach()
     endif()
 
+    # A tvOS app cannot read the build machine's filesystem after installation.
+    # Bundle the caller-supplied, locally extracted disc DATA inside this app.
+    # The source directory is never copied into the repository or a CI artifact.
+    if(MKW_PLATFORM_TVOS)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_DIR:${target}>/Assets"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${MKW_TVOS_DVD_DATA_DIR}" "$<TARGET_BUNDLE_DIR:${target}>/Assets/DATA"
+            COMMENT "Bundling user-provided Mario Kart Wii DATA into ${target}.app"
+            VERBATIM)
+    endif()
+
     set(MKW_WII_BOOTSTRAP_SOURCE_DIR "${MKW_RUNTIME_SOURCE_DIR}/assets/wii")
     if(NOT EXISTS "${MKW_WII_BOOTSTRAP_SOURCE_DIR}/shared2/wc24")
         message(FATAL_ERROR "Missing Wii first-run bootstrap payload: ${MKW_WII_BOOTSTRAP_SOURCE_DIR}")
