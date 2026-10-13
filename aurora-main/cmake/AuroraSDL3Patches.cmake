@@ -35,7 +35,7 @@ function(aurora_sdl3_apply_patches sdl_source_dir)
   # aborts with "Threads are needed by many SDL subsystems".
   _aurora_sdl3_replace("${sdl_source_dir}/cmake/sdlchecks.cmake" "tvOS POSIX pthread detection"
 [==[    elseif(DARWIN)]==]
-[==[    elseif(DARWIN OR TVOS)]==])
+[==[    elseif(DARWIN OR TVOS OR CMAKE_SYSTEM_NAME STREQUAL "tvOS")]==])
 
   set(_wii "${sdl_source_dir}/src/joystick/hidapi/SDL_hidapi_wii.c")
   if (NOT EXISTS "${_wii}")
