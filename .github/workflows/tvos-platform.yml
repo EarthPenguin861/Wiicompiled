@@ -90,7 +90,8 @@ jobs:
         run: |
           cmake --build build-tvos-audit --parallel 3 --target \
             mkw_tvos_native_compile \
-            WiiCompiledTvOSSmoke
+            WiiCompiledTvOSSmoke \
+            WiiCompiledTvOSSDLSmoke
 
       - name: Audit linked tvOS executable for build-machine dependencies
         shell: bash
@@ -128,6 +129,26 @@ jobs:
         with:
           name: WiiCompiled-tvOS-renderer-smoke
           path: ${{ runner.temp }}/WiiCompiled-tvOS-renderer-smoke.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Package the SDL-only startup diagnostic app
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          APP="$(find build-tvos-audit -type d -name WiiCompiledTvOSSDLSmoke.app -print -quit)"
+          test -n "$APP"
+          plutil -lint "$APP/Info.plist"
+          IPA="$RUNNER_TEMP/WiiCompiled-tvOS-sdl-smoke.ipa"
+          bash scripts/package-tvos-ipa.sh "$APP" "$IPA"
+          unzip -t "$IPA"
+          unzip -Z1 "$IPA" | grep -Fx "Payload/WiiCompiledTvOSSDLSmoke.app/WiiCompiledTvOSSDLSmoke"
+          echo "SDL-only diagnostic IPA: $IPA"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: WiiCompiled-tvOS-sdl-smoke
+          path: ${{ runner.temp }}/WiiCompiled-tvOS-sdl-smoke.ipa
           if-no-files-found: error
           retention-days: 7
 
