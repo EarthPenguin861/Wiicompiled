@@ -420,6 +420,31 @@ else()
             endif()
         endif()
         set_target_properties(mkw_macos_native_compile PROPERTIES UNITY_BUILD OFF)
+    elseif(MKW_PLATFORM_TVOS)
+        # Compile-only audit of runtime sources for the Apple TV device SDK.
+        # Product entry/registration sources and two generated-code-dependent
+        # sources are excluded, so this still works without a private game dump
+        # or translator output. Building the object target also builds the
+        # Aurora/SDL/Dawn static libraries listed in target_link_libraries.
+        set(MKW_TVOS_NATIVE_AUDIT_SOURCES ${SOURCES})
+        list(REMOVE_ITEM MKW_TVOS_NATIVE_AUDIT_SOURCES
+            "${CMAKE_CURRENT_LIST_DIR}/src/abi_bridge.cpp"
+            "${CMAKE_CURRENT_LIST_DIR}/src/hle/os/os_alarm.cpp"
+            "${MKW_BASE_PRODUCT_SOURCE}"
+            "${MKW_RETRO_REWIND_PRODUCT_SOURCE}")
+        add_library(mkw_tvos_native_compile OBJECT ${MKW_TVOS_NATIVE_AUDIT_SOURCES})
+        target_include_directories(mkw_tvos_native_compile PRIVATE
+            "${CMAKE_CURRENT_LIST_DIR}/include" "${CMAKE_CURRENT_LIST_DIR}/src"
+            "${CMAKE_CURRENT_LIST_DIR}/.." "${CMAKE_CURRENT_LIST_DIR}/../aurora-main/include")
+        target_compile_features(mkw_tvos_native_compile PRIVATE cxx_std_20)
+        # Do not define SDL_MAIN_HANDLED here: the tvOS build must preserve SDL's
+        # mobile main-entrypoint adaptation instead of compiling a desktop main.
+        target_compile_definitions(mkw_tvos_native_compile PRIVATE TARGET_PC
+            _DISABLE_STRING_ANNOTATION _DISABLE_VECTOR_ANNOTATION)
+        target_link_libraries(mkw_tvos_native_compile PRIVATE
+            aurora::gx aurora::pad aurora::si aurora::vi aurora::mtx
+            mkw::pugixml mkw::toml11 mkw::cryptopp mkw::mbedtls)
+        set_target_properties(mkw_tvos_native_compile PROPERTIES UNITY_BUILD OFF)
     endif()
     add_custom_target(mkw_platform_paths_check DEPENDS mkw_platform)
     message(STATUS "Translated product targets disabled (MKW_BUILD_PRODUCTS=OFF)")
