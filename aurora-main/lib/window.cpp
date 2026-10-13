@@ -450,8 +450,14 @@ bool create_window(AuroraBackend backend) {
     return false;
   }
   SDL_SetWindowMinimumSize(g_window, 640, 480);
+#if defined(__APPLE__) && TARGET_OS_TV
+  // tvOS only supports a full-screen application surface. Do not initialize
+  // runtime state as "windowed" merely because a desktop config was imported.
+  g_displayMode.store(AURORA_DISPLAY_MODE_BORDERLESS, std::memory_order_release);
+#else
   g_displayMode.store(g_config.startFullscreen ? AURORA_DISPLAY_MODE_BORDERLESS : AURORA_DISPLAY_MODE_WINDOWED,
                       std::memory_order_release);
+#endif
 #if defined(_WIN32)
   install_window_proc_hook();
 #endif
@@ -677,6 +683,11 @@ void set_fullscreen(bool fullscreen) {
 bool get_fullscreen() { return (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0u; }
 
 void set_display_mode(AuroraDisplayMode mode) {
+#if defined(__APPLE__) && TARGET_OS_TV
+  // Windowed and exclusive-display modes do not exist for tvOS apps; keep the
+  // API deterministic for callers that restore a desktop Config.toml.
+  mode = AURORA_DISPLAY_MODE_BORDERLESS;
+#endif
   if (g_window == nullptr) {
     return;
   }
