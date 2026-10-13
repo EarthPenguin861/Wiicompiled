@@ -1,0 +1,59 @@
+name: tvOS platform compile
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["ai/tvos-port-*"]
+    paths:
+      - ".github/workflows/tvos-platform.yml"
+      - "runtime/**"
+      - "aurora-main/**"
+      - "docs/porting-tvos.md"
+  pull_request:
+    paths:
+      - "runtime/**"
+      - "aurora-main/**"
+      - "docs/porting-tvos.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tvos-platform-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tvos-platform-compile:
+    name: tvOS SDK compile (no game assets)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Configure against the Apple TV device SDK
+        run: |
+          cmake -S runtime -B build-tvos-platform -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_SYSTEM_NAME=tvOS \
+            -DCMAKE_OSX_SYSROOT=appletvos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+            -DMKW_BUILD_PRODUCTS=OFF \
+            -DMKW_PLATFORM_TESTS_ONLY=ON
+
+      - name: Compile platform and runtime contract tests
+        run: |
+          cmake --build build-tvos-platform --parallel 3 --target \
+            mkw_platform_paths_tests \
+            mkw_runtime_config_tests \
+            mkw_nand_save_tests \
+            mkw_nand_settings_tests \
+            mkw_sc_serial_tests \
+            mkw_input_expr_tests
+          file build-tvos-platform/mkw_platform_paths_tests
+
+      # These are tvOS-device binaries, not macOS executables. Building them is
+      # the valid CI check here; execution belongs on an Apple TV or tvOS runner.
