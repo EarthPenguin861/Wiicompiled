@@ -6,7 +6,7 @@
 # profile. Never commit signing keys, profiles, or game dumps to this repo.
 #
 # Usage:
-#   scripts/package-tvos-ipa.sh path/to/WiiCompiled.app [dist/WiiCompiled-tvOS.ipa]
+#   bash scripts/package-tvos-ipa.sh path/to/WiiCompiled.app [dist/WiiCompiled-tvOS.ipa]
 
 set -Eeuo pipefail
 
@@ -19,7 +19,7 @@ APP_PATH="${1:-}"
 OUTPUT_IPA="${2:-dist/WiiCompiled-tvOS.ipa}"
 
 if [[ -z "$APP_PATH" || ! -d "$APP_PATH" ]]; then
-    echo "Usage: $0 path/to/WiiCompiled.app [output.ipa]" >&2
+    echo "Usage: bash $0 path/to/WiiCompiled.app [output.ipa]" >&2
     exit 2
 fi
 
