@@ -22,6 +22,10 @@
     <true/>
     <key>MinimumOSVersion</key>
     <string>${CMAKE_OSX_DEPLOYMENT_TARGET}</string>
+    <key>CFBundleSupportedPlatforms</key>
+    <array>
+        <string>AppleTVOS</string>
+    </array>
     <key>UIDeviceFamily</key>
     <array>
         <integer>3</integer>
