@@ -4,22 +4,23 @@ This document tracks the initial investigation for running WiiCompiled on Apple 
 
 ## Current status
 
-**Not yet a working tvOS port.** The existing project targets desktop Windows, Linux, and macOS. A tvOS build needs platform work beyond changing the CMake target or forcing a fullscreen window.
+**Still not a working tvOS port.** The branch now has an experimental device-SDK platform path, an Apple TV app-bundle template, a Dawn provider guard, and a compile-only CI check for platform utilities. The full game runtime has not yet been built or launched on tvOS.
 
-The current runtime CMake logic treats any Apple arm64 target as macOS. That is incorrect for tvOS: it selects macOS deployment settings and desktop assumptions, and can make a cross-configuration look more supported than it is. Until the required dependencies and lifecycle changes are implemented, configuration should fail explicitly rather than silently take the macOS path.
+The target is deliberately device-only arm64 for now. SDL3 documents tvOS builds, but upstream Dawn's current support matrix explicitly does not support tvOS. The CMake provider therefore avoids trying to download a nonexistent tvOS prebuilt and attempts an exploratory source build instead. This is dependency-spike work, not evidence that Dawn compiles or renders correctly on Apple TV.
 
 ## Findings
 
 - The translated game/runtime is C++17/20 and uses Aurora for Wii/GameCube APIs, SDL3 for window/input, and Dawn/WebGPU for graphics.
-- The desktop macOS renderer uses Dawn's Metal backend. Dawn's supported-platform matrix does not currently establish tvOS as a supported target, so Metal-on-tvOS must be verified or replaced/adapted before claiming renderer support.
+- SDL3 documents tvOS as a CMake target. The port can vendor the pinned SDL source rather than reuse a desktop binary.
+- The desktop macOS renderer uses Dawn's Metal backend. Upstream Dawn currently lists tvOS as unsupported, so the vendor build may need source-level changes before a Metal/WebGPU renderer can run.
 - `runtime/src/platform/host_platform.cpp` already has an Apple executable-path implementation and stores application data under `~/Library/Application Support`. tvOS sandboxing and app-container paths need an explicit design; desktop filesystem assumptions must not be carried over untested.
 - A usable Apple TV app needs an app bundle, signing/provisioning, tvOS lifecycle handling, focus-based remote/controller UI, and a way to provide the user's own game assets within the app sandbox. The existing desktop setup/launcher flow is not a tvOS app installer.
 - The project currently expects a clean, user-provided PAL `RMCP01` game image. The port must continue to exclude Nintendo game data and must not add copyrighted assets to the repository or app package.
 
 ## Suggested implementation order
 
-1. **Build-system safety (this change):** detect tvOS/iOS explicitly and stop before the generic Apple/macOS branch can be selected.
-2. **Dependency spike:** verify a supported SDL3 tvOS build and whether the pinned Dawn version can compile and run its Metal/WebGPU path on tvOS. Record exact upstream patches/options instead of assuming desktop macOS support transfers.
+1. **Build-system foundation (in progress):** select a tvOS device SDK, use a conservative arm64 CPU baseline, bundle the executable as an Apple TV app, and never route tvOS to desktop Dawn artifacts.
+2. **Dependency spike:** the new compile-only CI check covers the platform utility layer. Next, get the full Aurora/SDL/Dawn dependency graph through a tvOS SDK build, then patch Dawn where the source build fails. A successful compile is not enough; Metal rendering must be exercised on-device.
 3. **Runtime platform layer:** use tvOS-safe app-container paths, handle suspend/resume and foreground/background transitions, and remove desktop-only assumptions (keyboard shortcuts, window sizing, filesystem writes outside the container).
 4. **TV interaction:** provide focus navigation and controller-first settings; the F10 desktop settings bar is not an adequate Apple TV interface.
 5. **Packaging:** build a tvOS app target with correct bundle metadata, entitlements, signing, and a documented install/deploy workflow.
