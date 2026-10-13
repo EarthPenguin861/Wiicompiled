@@ -92,6 +92,26 @@ jobs:
             mkw_tvos_native_compile \
             WiiCompiledTvOSSmoke
 
+      - name: Audit linked tvOS executable for build-machine dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          APP="$(find build-tvos-audit -type d -name WiiCompiledTvOSSmoke.app -print -quit)"
+          test -n "$APP"
+          EXECUTABLE="$APP/WiiCompiledTvOSSmoke"
+          test -f "$EXECUTABLE"
+          echo "Linked dynamic dependencies:"
+          DEPS="$(otool -L "$EXECUTABLE" | sed '1d')"
+          printf '%s\\n' "$DEPS"
+          if grep -E '(@rpath/)?libpng[^[:space:]]*|/Users/runner/work/[^[:space:]]*|_deps/[^[:space:]]*\\.dylib' <<<"$DEPS"; then
+            echo "::error::tvOS executable contains an unbundled libpng or build-tree dylib dependency"
+            exit 1
+          fi
+          if otool -l "$EXECUTABLE" | grep -F '/Users/runner/work/'; then
+            echo "::error::tvOS executable contains an RPATH into the GitHub runner workspace"
+            exit 1
+          fi
+
       - name: Package the asset-free renderer smoke app
         shell: bash
         run: |
