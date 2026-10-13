@@ -86,9 +86,31 @@ jobs:
             -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
             -DMKW_BUILD_PRODUCTS=OFF
 
-      - name: Compile Aurora dependencies and native runtime sources
+      - name: Compile native runtime and link a real tvOS Metal smoke app
         run: |
-          cmake --build build-tvos-audit --parallel 3 --target mkw_tvos_native_compile
+          cmake --build build-tvos-audit --parallel 3 --target \
+            mkw_tvos_native_compile \
+            WiiCompiledTvOSSmoke
 
-      # The translated Mario Kart products need generated shards produced from
-      # a user's own RMCP01 disc image. This audit intentionally excludes them.
+      - name: Package the asset-free renderer smoke app
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          APP="$(find build-tvos-audit -type d -name WiiCompiledTvOSSmoke.app -print -quit)"
+          test -n "$APP"
+          plutil -lint "$APP/Info.plist"
+          IPA="$RUNNER_TEMP/WiiCompiled-tvOS-renderer-smoke.ipa"
+          bash scripts/package-tvos-ipa.sh "$APP" "$IPA"
+          unzip -t "$IPA"
+          echo "Renderer smoke IPA: $IPA"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: WiiCompiled-tvOS-renderer-smoke
+          path: ${{ runner.temp }}/WiiCompiled-tvOS-renderer-smoke.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+      # This is a renderer/entrypoint smoke app, not the game. The translated
+      # Mario Kart products require a local translator manifest and user-owned
+      # RMCP01 game data, which must never be placed in GitHub Actions artifacts.
