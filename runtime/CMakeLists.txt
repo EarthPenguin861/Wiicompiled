@@ -514,6 +514,26 @@ else()
             XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.earthpenguin.wiicompiled.smoke"
             XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "3"
             XCODE_ATTRIBUTE_TVOS_DEPLOYMENT_TARGET "${CMAKE_OSX_DEPLOYMENT_TARGET}")
+
+        # Isolate app startup + SDL's native Apple renderer from Aurora/Dawn.
+        # The Metal smoke screen has launched on-device but showed only the
+        # launch gradient, so this app gives us a clean split: if this renders,
+        # the failure is downstream in Aurora/Dawn; if not, it is earlier in
+        # SDL/UIKit/window startup.
+        add_executable(WiiCompiledTvOSSDLSmoke MACOSX_BUNDLE
+            "${CMAKE_CURRENT_LIST_DIR}/tests/tvos_sdl_smoke.cpp")
+        target_compile_features(WiiCompiledTvOSSDLSmoke PRIVATE cxx_std_20)
+        target_link_libraries(WiiCompiledTvOSSDLSmoke PRIVATE ${AURORA_SDL3_TARGET})
+        set_target_properties(WiiCompiledTvOSSDLSmoke PROPERTIES
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_GUI_IDENTIFIER "com.earthpenguin.wiicompiled.sdl-smoke"
+            MACOSX_BUNDLE_BUNDLE_NAME "WiiCompiled SDL tvOS Diagnostic"
+            MACOSX_BUNDLE_BUNDLE_VERSION "1"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
+            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_LIST_DIR}/cmake/tvos/Info.plist.in"
+            XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.earthpenguin.wiicompiled.sdl-smoke"
+            XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "3"
+            XCODE_ATTRIBUTE_TVOS_DEPLOYMENT_TARGET "${CMAKE_OSX_DEPLOYMENT_TARGET}")
     endif()
     add_custom_target(mkw_platform_paths_check DEPENDS mkw_platform)
     message(STATUS "Translated product targets disabled (MKW_BUILD_PRODUCTS=OFF)")
