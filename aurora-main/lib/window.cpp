@@ -225,8 +225,24 @@ bool SDLCALL lifecycle_event_watch(void*, SDL_Event* event) {
     break;
   case SDL_EVENT_WINDOW_RESTORED:
     g_backgrounded.store(false, std::memory_order_relaxed);
+    g_nativeResizePending.store(true, std::memory_order_release);
     break;
 #endif
+  // SDL's application lifecycle events are delivered through this event watch
+  // on Apple platforms. tvOS may background the app without a traditional
+  // window-minimized event; suspend presentation until the app is interactive
+  // again, then force a swapchain-size refresh before rendering resumes.
+  case SDL_EVENT_WILL_ENTER_BACKGROUND:
+  case SDL_EVENT_DID_ENTER_BACKGROUND:
+    g_backgrounded.store(true, std::memory_order_release);
+    break;
+  case SDL_EVENT_WILL_ENTER_FOREGROUND:
+    // Keep rendering suspended until the OS reports that the app is interactive.
+    break;
+  case SDL_EVENT_DID_ENTER_FOREGROUND:
+    g_backgrounded.store(false, std::memory_order_release);
+    g_nativeResizePending.store(true, std::memory_order_release);
+    break;
   default:
     break;
   }
