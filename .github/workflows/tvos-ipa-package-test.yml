@@ -1,0 +1,80 @@
+name: tvOS IPA packaging helper
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["ai/tvos-port-*"]
+    paths:
+      - "scripts/package-tvos-ipa.sh"
+      - ".github/workflows/tvos-ipa-package-test.yml"
+  pull_request:
+    paths:
+      - "scripts/package-tvos-ipa.sh"
+      - ".github/workflows/tvos-ipa-package-test.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  package-smoke-test:
+    name: Package a minimal tvOS app into IPA structure
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Create a minimal arm64 tvOS app bundle
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          APP="$RUNNER_TEMP/WiiCompiled.app"
+          mkdir -p "$APP"
+
+          cat > "$RUNNER_TEMP/main.c" <<'C'
+          int main(void) { return 0; }
+          C
+
+          xcrun --sdk appletvos clang \
+            -target arm64-apple-tvos14.0 \
+            -isysroot "$(xcrun --sdk appletvos --show-sdk-path)" \
+            "$RUNNER_TEMP/main.c" -o "$APP/WiiCompiled"
+
+          cat > "$APP/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>WiiCompiled</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.example.wiicompiled.packagingtest</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleVersion</key>
+              <string>1</string>
+              <key>CFBundleShortVersionString</key>
+              <string>0.1</string>
+              <key>MinimumOSVersion</key>
+              <string>14.0</string>
+              <key>CFBundleSupportedPlatforms</key>
+              <array>
+                  <string>AppleTVOS</string>
+              </array>
+              <key>UIDeviceFamily</key>
+              <array>
+                  <integer>3</integer>
+              </array>
+          </dict>
+          </plist>
+          PLIST
+
+      - name: Package and verify the IPA
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          IPA="$RUNNER_TEMP/WiiCompiled-tvOS.ipa"
+          bash scripts/package-tvos-ipa.sh "$RUNNER_TEMP/WiiCompiled.app" "$IPA"
+          unzip -t "$IPA"
+          unzip -Z1 "$IPA" | grep -Fx "Payload/WiiCompiled.app/Info.plist"
+          unzip -Z1 "$IPA" | grep -Fx "Payload/WiiCompiled.app/WiiCompiled"
