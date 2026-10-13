@@ -315,6 +315,17 @@ else()
     set(SDL_STATIC ON CACHE BOOL "" FORCE)
     set(SDL_TEST OFF CACHE BOOL "" FORCE)
 
+    # Apple TV app bundles must not depend on build-tree dylibs. Aurora's
+    # dependency block uses BUILD_SHARED_LIBS to choose shared zlib/libpng
+    # targets; with the variable unset, libpng becomes a dylib whose install
+    # name/RPATH points into the CI build directory. Force static third-party
+    # dependencies for tvOS so the app is self-contained apart from Apple
+    # system frameworks. Keep desktop platform linkage defaults unchanged.
+    if(MKW_PLATFORM_TVOS)
+        set(BUILD_SHARED_LIBS OFF CACHE BOOL
+            "Build third-party dependencies statically for tvOS app bundles" FORCE)
+    endif()
+
     # MinGW/WSL can choke on SDL precompiled headers; disable PCH for aurora/SDL.
     set(CMAKE_DISABLE_PRECOMPILE_HEADERS ON)
     # Isolate aurora build products to a subdirectory under the main build dir.
