@@ -34,10 +34,13 @@ if (AURORA_ENABLE_GX)
     target_compile_definitions(aurora_core PUBLIC AURORA_ENABLE_GX WEBGPU_DAWN)
     target_sources(aurora_core PRIVATE lib/webgpu/gpu.cpp lib/webgpu/gpu_cache.cpp lib/dawn/BackendBinding.cpp)
     target_link_libraries(aurora_core PRIVATE dawn::webgpu_dawn)
-    if (APPLE AND DAWN_ENABLE_METAL)
+    # This implementation uses IOSurface/CoreVideo APIs that are not exposed
+    # by the tvOS SDK. Keep Metal/WebGPU enabled on tvOS, but use the existing
+    # unsupported-feature stub for MetalFX spatial upscaling.
+    if (APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "tvOS" AND DAWN_ENABLE_METAL)
         find_library(AURORA_METALFX_FRAMEWORK MetalFX)
     endif ()
-    if (APPLE AND DAWN_ENABLE_METAL AND AURORA_METALFX_FRAMEWORK)
+    if (APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "tvOS" AND DAWN_ENABLE_METAL AND AURORA_METALFX_FRAMEWORK)
         target_sources(aurora_core PRIVATE lib/webgpu/metalfx.mm)
         set_source_files_properties(lib/webgpu/metalfx.mm PROPERTIES COMPILE_FLAGS -fobjc-arc)
         target_link_options(aurora_core PUBLIC "LINKER:-weak_framework,MetalFX")
