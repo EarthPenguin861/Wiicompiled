@@ -66,12 +66,20 @@ jobs:
         with:
           persist-credentials: false
 
+      # The pinned Dawn generator uses Jinja APIs removed from Python 3.14.
+      # Keep the source build on a known-compatible interpreter rather than
+      # inheriting whichever Homebrew Python the runner currently provides.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
       - name: Configure the runtime and graphics dependencies
         run: |
           cmake -S runtime -B build-tvos-audit -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
+            -DPython3_EXECUTABLE="$(python3 -c 'import sys; print(sys.executable)')" \
             -DCMAKE_SYSTEM_NAME=tvOS \
             -DCMAKE_OSX_SYSROOT=appletvos \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
