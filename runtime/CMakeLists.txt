@@ -22,6 +22,16 @@ endif()
 project(mkw_recompiled)
 
 if(MKW_REQUESTED_TVOS)
+    # Dawn/Abseil use try_compile() checks during configure. Export the language
+    # standard as cache defaults as well as normal target properties, otherwise
+    # those checks can run in Clang's pre-C++17 default mode even though Aurora
+    # itself compiles as C++20.
+    set(CMAKE_CXX_STANDARD 20 CACHE STRING
+        "Default C++ standard for the experimental tvOS build" FORCE)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON CACHE BOOL
+        "Require the selected C++ standard for the tvOS build" FORCE)
+    set(CMAKE_CXX_EXTENSIONS OFF CACHE BOOL
+        "Disable compiler-specific C++ language extensions for tvOS" FORCE)
     message(STATUS "Configuring experimental WiiCompiled tvOS target (not yet a validated device port)")
 endif()
 
