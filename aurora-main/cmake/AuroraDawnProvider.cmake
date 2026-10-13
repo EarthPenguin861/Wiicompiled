@@ -81,6 +81,11 @@ endif ()
 
 if (_aurora_dawn_provider STREQUAL "vendor")
   # ── Vendor: FetchContent build from source ──
+  if (CMAKE_SYSTEM_NAME STREQUAL "tvOS")
+    message(WARNING
+      "aurora: attempting an experimental Dawn source build for tvOS; "
+      "upstream lists tvOS as unsupported, so dependency configuration or rendering may fail.")
+  endif ()
   if (NOT TARGET webgpu_dawn)
     message(STATUS "aurora: Fetching Dawn (provider=vendor, linkage=${AURORA_DAWN_LINKAGE})")
 
@@ -110,8 +115,12 @@ if (_aurora_dawn_provider STREQUAL "vendor")
     endif ()
 
     include(FetchContent)
+    if (NOT AURORA_DAWN_SOURCE_REV MATCHES "^[0-9a-fA-F]{40}$")
+      message(FATAL_ERROR
+        "AURORA_DAWN_SOURCE_REV must be a 40-character google/dawn commit SHA; got '${AURORA_DAWN_SOURCE_REV}'")
+    endif ()
     FetchContent_Declare(dawn
-      URL "https://github.com/google/dawn/archive/refs/tags/${AURORA_DAWN_VERSION}.tar.gz"
+      URL "https://github.com/google/dawn/archive/${AURORA_DAWN_SOURCE_REV}.tar.gz"
       DOWNLOAD_EXTRACT_TIMESTAMP FALSE
       EXCLUDE_FROM_ALL
     )
