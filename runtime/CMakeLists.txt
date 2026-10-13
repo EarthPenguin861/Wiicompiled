@@ -484,6 +484,25 @@ else()
             aurora::gx aurora::pad aurora::si aurora::vi aurora::mtx
             mkw::pugixml mkw::toml11 mkw::cryptopp mkw::mbedtls)
         set_target_properties(mkw_tvos_native_compile PROPERTIES UNITY_BUILD OFF)
+
+        # This real tvOS app target validates executable linking, SDL's UIKit
+        # entrypoint, the Dawn/Metal framework closure, and the production bundle
+        # plist without a generated game manifest or user-owned game data.
+        add_executable(WiiCompiledTvOSSmoke MACOSX_BUNDLE
+            "${CMAKE_CURRENT_LIST_DIR}/tests/tvos_link_smoke.cpp")
+        target_compile_features(WiiCompiledTvOSSmoke PRIVATE cxx_std_20)
+        target_link_libraries(WiiCompiledTvOSSmoke PRIVATE
+            aurora::gx aurora::pad aurora::si aurora::vi aurora::mtx)
+        set_target_properties(WiiCompiledTvOSSmoke PROPERTIES
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_GUI_IDENTIFIER "com.earthpenguin.wiicompiled.smoke"
+            MACOSX_BUNDLE_BUNDLE_NAME "WiiCompiled tvOS Smoke"
+            MACOSX_BUNDLE_BUNDLE_VERSION "1"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
+            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_LIST_DIR}/cmake/tvos/Info.plist.in"
+            XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.earthpenguin.wiicompiled.smoke"
+            XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "3"
+            XCODE_ATTRIBUTE_TVOS_DEPLOYMENT_TARGET "${CMAKE_OSX_DEPLOYMENT_TARGET}")
     endif()
     add_custom_target(mkw_platform_paths_check DEPENDS mkw_platform)
     message(STATUS "Translated product targets disabled (MKW_BUILD_PRODUCTS=OFF)")
