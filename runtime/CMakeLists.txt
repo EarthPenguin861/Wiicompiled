@@ -85,6 +85,16 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Release")
 endif()
 
 option(MKW_BUILD_PRODUCTS "Build translated WiiCompiled product targets" ON)
+set(MKW_TVOS_DVD_DATA_DIR "" CACHE PATH
+    "Optional path to the user-owned extracted Mario Kart Wii DATA directory for tvOS bundles")
+if(MKW_PLATFORM_TVOS AND MKW_BUILD_PRODUCTS)
+    if(NOT IS_DIRECTORY "${MKW_TVOS_DVD_DATA_DIR}/files" OR
+       NOT EXISTS "${MKW_TVOS_DVD_DATA_DIR}/sys/fst.bin")
+        message(FATAL_ERROR
+            "tvOS product builds require -DMKW_TVOS_DVD_DATA_DIR=/path/to/Assets/DATA containing files/ and sys/fst.bin. This is your local game data; do not commit it.")
+    endif()
+    message(STATUS "Bundling user-provided Wii DATA into the tvOS app: ${MKW_TVOS_DVD_DATA_DIR}")
+endif()
 option(MKW_BUILD_PSQ_TESTS "Build focused PSQ ISA tests" OFF)
 set(MKW_X86_CPU_PROFILE "v3" CACHE STRING
     "Minimum x86-64 CPU profile for translated products (v2 or v3)")
