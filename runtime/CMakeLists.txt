@@ -10,8 +10,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "tvOS" OR CMAKE_OSX_SYSROOT MATCHES "[Tt][Vv][Oo][
     endif()
     set(MKW_REQUESTED_TVOS TRUE)
     if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
-        # libc++ marks std::filesystem::path unavailable in tvOS before 13.0.
-        set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING
+        # Dawn's condition_variable implementation needs tvOS 14.0 APIs.
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING
             "Minimum tvOS version supported by WiiCompiled" FORCE)
     endif()
 elseif(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
