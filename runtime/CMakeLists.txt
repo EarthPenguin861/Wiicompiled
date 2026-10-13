@@ -1,23 +1,27 @@
 cmake_minimum_required(VERSION 3.25)
 
-# Dawn's pinned macOS artifacts target 12.0. Set the same floor before project()
-# initializes the Apple toolchain so direct developer CMake invocations cannot
-# accidentally inherit the running SDK's deployment version. This cache entry
-# is harmless on non-Apple platforms and remains overridable by a caller.
-if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+# tvOS and macOS have different SDKs, deployment targets, app bundles, and
+# graphics-dependency support. Detect tvOS before project() so CMake can
+# initialize the correct Apple toolchain and use a tvOS deployment floor.
+if(CMAKE_SYSTEM_NAME STREQUAL "tvOS" OR CMAKE_OSX_SYSROOT MATCHES "[Tt][Vv][Oo][Ss]")
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "tvOS")
+        message(FATAL_ERROR
+            "Use -DCMAKE_SYSTEM_NAME=tvOS when targeting Apple TV; setting only CMAKE_OSX_SYSROOT is insufficient.")
+    endif()
+    set(MKW_REQUESTED_TVOS TRUE)
+    if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING
+            "Minimum tvOS version supported by WiiCompiled" FORCE)
+    endif()
+elseif(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    # Dawn's pinned macOS artifacts target 12.0.
     set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING
         "Minimum macOS version supported by WiiCompiled" FORCE)
 endif()
 project(mkw_recompiled)
 
-# tvOS is not macOS. In particular, selecting an Apple Silicon architecture
-# must not silently route a tvOS configure through the desktop macOS settings:
-# the app lifecycle, signing, sandbox paths and renderer dependencies are not
-# validated for tvOS yet. Fail explicitly until the dedicated tvOS toolchain and
-# dependency path are implemented.
-if(CMAKE_SYSTEM_NAME STREQUAL "tvOS" OR CMAKE_OSX_SYSROOT MATCHES "[Tt][Vv][Oo][Ss]")
-    message(FATAL_ERROR
-        "WiiCompiled does not yet support tvOS. See docs/porting-tvos.md for the current porting status and blockers.")
+if(MKW_REQUESTED_TVOS)
+    message(STATUS "Configuring experimental WiiCompiled tvOS target (not yet a validated device port)")
 endif()
 
 if(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(Clang|AppleClang)$" OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -38,6 +42,11 @@ endif()
 
 if(WIN32 AND MINGW AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64|X86_64)$")
     set(MKW_PLATFORM_WINDOWS TRUE)
+elseif(MKW_REQUESTED_TVOS AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|ARM64|aarch64)$")
+    set(MKW_PLATFORM_TVOS TRUE)
+elseif(MKW_REQUESTED_TVOS)
+    message(FATAL_ERROR
+        "WiiCompiled's tvOS app target currently supports Apple TV devices (arm64, -DCMAKE_OSX_SYSROOT=appletvos), not simulator/x86 builds")
 elseif(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64|X86_64|arm64|ARM64)$")
     set(MKW_PLATFORM_MACOS TRUE)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64|X86_64)$")
@@ -49,7 +58,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(
     set(MKW_PLATFORM_LINUX TRUE)
 else()
     message(FATAL_ERROR
-        "WiiCompiled supports 64-bit LLVM-MinGW Clang on Windows, native Linux x86_64/aarch64, or Apple Clang on macOS x86_64/arm64")
+        "WiiCompiled supports 64-bit LLVM-MinGW Clang on Windows, native Linux x86_64/aarch64, Apple Clang on macOS x86_64/arm64, or experimental Apple TV arm64")
 endif()
 
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -232,7 +241,7 @@ else()
         set(DAWN_ENABLE_VULKAN ON CACHE BOOL "" FORCE)
         set(DAWN_ENABLE_METAL OFF CACHE BOOL "" FORCE)
         set(TINT_BUILD_HLSL_WRITER ON CACHE BOOL "" FORCE)
-    elseif(MKW_PLATFORM_MACOS)
+    elseif(MKW_PLATFORM_MACOS OR MKW_PLATFORM_TVOS)
         set(DAWN_ENABLE_D3D12 OFF CACHE BOOL "" FORCE)
         set(DAWN_ENABLE_VULKAN OFF CACHE BOOL "" FORCE)
         set(DAWN_ENABLE_METAL ON CACHE BOOL "" FORCE)
@@ -331,13 +340,11 @@ endif()
 # a registration file is silently never compiled and never errors. The stale-glob
 # failure mode is worth far more than the milliseconds.
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.cpp")
-if(MKW_PLATFORM_MACOS)
+if(MKW_PLATFORM_MACOS OR MKW_PLATFORM_TVOS)
     list(REMOVE_ITEM SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/guest_flat_memory.cpp")
-    if(MKW_PLATFORM_MACOS_ARM64)
-        # HostContext's Apple Silicon backend is implemented in a small assembly
-        # companion. It must be part of the product runtime as well as the
-        # standalone context test; otherwise the final executable is missing
-        # mkw_co_init/mkw_co_switch at link time.
+    if(MKW_PLATFORM_MACOS_ARM64 OR MKW_PLATFORM_TVOS)
+        # The AArch64 host-context assembly uses the Apple arm64 calling
+        # convention and is shared by macOS and tvOS device builds.
         enable_language(ASM)
         list(APPEND SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/platform/macos/co_switch.S")
     endif()
