@@ -53,7 +53,34 @@ jobs:
             mkw_nand_settings_tests \
             mkw_sc_serial_tests \
             mkw_input_expr_tests
-          file build-tvos-platform/mkw_platform_paths_tests
+          file build-tvos-platform/mkw_platform_paths_tests.app/mkw_platform_paths_tests
 
-      # These are tvOS-device binaries, not macOS executables. Building them is
-      # the valid CI check here; execution belongs on an Apple TV or tvOS runner.
+      # CMake wraps tvOS executables in .app directories even for this compile-only
+      # check. Do not execute these arm64 device binaries on the macOS runner.
+
+  tvos-runtime-audit:
+    name: tvOS dependency and native runtime compile audit
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Configure the runtime and graphics dependencies
+        run: |
+          cmake -S runtime -B build-tvos-audit -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_SYSTEM_NAME=tvOS \
+            -DCMAKE_OSX_SYSROOT=appletvos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
+            -DMKW_BUILD_PRODUCTS=OFF
+
+      - name: Compile Aurora dependencies and native runtime sources
+        run: |
+          cmake --build build-tvos-audit --parallel 3 --target mkw_tvos_native_compile
+
+      # The translated Mario Kart products need generated shards produced from
+      # a user's own RMCP01 disc image. This audit intentionally excludes them.
