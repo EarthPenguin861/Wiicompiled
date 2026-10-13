@@ -1,0 +1,73 @@
+name: tvOS SDL-only diagnostic IPA
+
+on:
+  push:
+    branches: ["diagnostic/tvos-sdl-fast"]
+    paths:
+      - ".github/workflows/tvos-sdl-diagnostic.yml"
+      - "runtime/tests/tvos_sdl_smoke.cpp"
+      - "runtime/tests/tvos_sdl_smoke/CMakeLists.txt"
+      - "runtime/cmake/tvos/Info.plist.in"
+      - "aurora-main/cmake/AuroraSDL3Patches.cmake"
+      - "scripts/package-tvos-ipa.sh"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tvos-sdl-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-sdl-diagnostic:
+    name: Build and package SDL-only tvOS diagnostic
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Configure standalone SDL3 tvOS app
+        run: |
+          set -Eeuo pipefail
+          xcode-select -p
+          cmake -S runtime/tests/tvos_sdl_smoke -B build-tvos-sdl-smoke -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_SYSTEM_NAME=tvOS \
+            -DCMAKE_OSX_SYSROOT=appletvos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0
+
+      - name: Build SDL-only diagnostic
+        run: cmake --build build-tvos-sdl-smoke --parallel 3 --target WiiCompiledTvOSSDLSmoke
+
+      - name: Audit, package, and validate IPA
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          APP="$PWD/build-tvos-sdl-smoke/WiiCompiledTvOSSDLSmoke.app"
+          EXECUTABLE="$APP/WiiCompiledTvOSSDLSmoke"
+          test -d "$APP"
+          test -f "$EXECUTABLE"
+          plutil -lint "$APP/Info.plist"
+          file "$EXECUTABLE"
+          DEPS="$(otool -L "$EXECUTABLE" | sed '1d')"
+          printf '%s\n' "$DEPS"
+          if grep -E '/Users/runner/work/|_deps/[^[:space:]]*\.dylib|@rpath/libSDL3' <<<"$DEPS"; then
+            echo "::error::Unexpected build-machine path or dynamic SDL dependency"
+            exit 1
+          fi
+          IPA="$RUNNER_TEMP/WiiCompiled-tvOS-sdl-smoke.ipa"
+          bash scripts/package-tvos-ipa.sh "$APP" "$IPA"
+          unzip -t "$IPA"
+          unzip -Z1 "$IPA" | grep -Fx "Payload/WiiCompiledTvOSSDLSmoke.app/WiiCompiledTvOSSDLSmoke"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: WiiCompiled-tvOS-sdl-smoke
+          path: ${{ runner.temp }}/WiiCompiled-tvOS-sdl-smoke.ipa
+          if-no-files-found: error
+          retention-days: 7
