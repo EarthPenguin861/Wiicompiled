@@ -22,6 +22,9 @@
 #include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_pixels.h>
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 #if defined(_WIN32)
 #include <windows.h>
 #endif
@@ -498,6 +501,17 @@ bool initialize() {
   /* We don't want to initialize anything input related here, otherwise the add events will get lost to the void */
   TRY(SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight"), "Error setting {}: {}", SDL_HINT_ORIENTATIONS,
       SDL_GetError());
+#if defined(__APPLE__) && TARGET_OS_TV
+  // The Siri Remote is more useful as a directional/select/back device for
+  // focus-based settings navigation than as a two-button game joystick. Leave
+  // actual gamepads available through SDL's normal GameController API.
+  TRY(SDL_SetHint(SDL_HINT_TV_REMOTE_AS_JOYSTICK, "0"),
+      "Error configuring the Apple TV remote: {}", SDL_GetError());
+  // Keep the Menu / controller buttons inside the app rather than allowing
+  // them to summon system UI while the game is running.
+  TRY(SDL_SetHint(SDL_HINT_APPLE_TV_CONTROLLER_UI_EVENTS, "0"),
+      "Error configuring Apple TV controller UI events: {}", SDL_GetError());
+#endif
   TRY(SDL_InitSubSystem(SDL_INIT_EVENTS | SDL_INIT_VIDEO), "Error initializing SDL: {}", SDL_GetError());
 
 #if !defined(_WIN32) && !defined(__APPLE__)
