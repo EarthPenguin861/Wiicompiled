@@ -6,6 +6,10 @@
 #include <string>
 #include <vector>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #include <webgpu/webgpu_cpp.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_render.h>
@@ -46,6 +50,9 @@ void create_context() noexcept {
   ImGui::CreateContext();
   ImGuiIO& io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+#if defined(__APPLE__) && TARGET_OS_TV
+  io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+#endif
   remove_legacy_ini_file(g_config.userPath);
   remove_legacy_ini_file(g_config.cachePath);
   g_imguiLog = std::string{g_config.cachePath} + "/imgui.log";
