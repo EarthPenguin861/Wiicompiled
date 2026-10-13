@@ -28,6 +28,15 @@ function(_aurora_sdl3_replace file description old new)
 endfunction()
 
 function(aurora_sdl3_apply_patches sdl_source_dir)
+  # SDL 3.4.4's POSIX-thread detector checks DARWIN for the Apple pthread
+  # settings. When targeting tvOS, CMake's system name is "tvOS", so DARWIN
+  # is false even though the SDK provides pthreads in libSystem. Without this
+  # adjustment SDL falls through to -lpthread, its probe fails, and configure
+  # aborts with "Threads are needed by many SDL subsystems".
+  _aurora_sdl3_replace("${sdl_source_dir}/cmake/sdlchecks.cmake" "tvOS POSIX pthread detection"
+[==[    elseif(DARWIN)]==]
+[==[    elseif(DARWIN OR TVOS)]==])
+
   set(_wii "${sdl_source_dir}/src/joystick/hidapi/SDL_hidapi_wii.c")
   if (NOT EXISTS "${_wii}")
     message(FATAL_ERROR "aurora: SDL3 source tree at ${sdl_source_dir} has no SDL_hidapi_wii.c")
