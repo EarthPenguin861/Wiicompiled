@@ -474,6 +474,22 @@ else()
             aurora::gx aurora::pad aurora::si aurora::vi aurora::mtx
             mkw::pugixml mkw::toml11 mkw::cryptopp mkw::mbedtls)
         set_target_properties(mkw_tvos_native_compile PROPERTIES UNITY_BUILD OFF)
+
+        # Exercise CMake's real tvOS app-bundle layout without requiring translated
+        # game code or a copyrighted game image. This catches plist/bundle-layout
+        # mistakes separately from the larger native-source compile audit.
+        add_executable(mkw_tvos_bundle_smoke MACOSX_BUNDLE
+            "${CMAKE_CURRENT_LIST_DIR}/tests/tvos_bundle_smoke.cpp")
+        set_target_properties(mkw_tvos_bundle_smoke PROPERTIES
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_GUI_IDENTIFIER "com.earthpenguin.wiicompiled.bundlecheck"
+            MACOSX_BUNDLE_BUNDLE_VERSION "1"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
+            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_LIST_DIR}/cmake/tvos/Info.plist.in"
+            XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.earthpenguin.wiicompiled.bundlecheck"
+            XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "3"
+            XCODE_ATTRIBUTE_TVOS_DEPLOYMENT_TARGET "${CMAKE_OSX_DEPLOYMENT_TARGET}")
+        target_compile_features(mkw_tvos_bundle_smoke PRIVATE cxx_std_17)
     endif()
     add_custom_target(mkw_platform_paths_check DEPENDS mkw_platform)
     message(STATUS "Translated product targets disabled (MKW_BUILD_PRODUCTS=OFF)")
