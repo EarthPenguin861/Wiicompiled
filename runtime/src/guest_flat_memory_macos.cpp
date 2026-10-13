@@ -1,7 +1,10 @@
 #include "guest_flat_memory.h"
 
+#include <TargetConditionals.h>
 #include <mach/mach.h>
+#if !TARGET_OS_TV
 #include <mach/mach_vm.h>
+#endif
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -27,6 +30,47 @@ struct Mapping {
     uint64_t size = 0;
     uint8_t* host = nullptr;
 };
+
+// Apple TV exposes the legacy vm_* API but intentionally rejects mach_vm.h.
+ // On 64-bit Darwin, vm_address_t/vm_size_t are pointer-width, so those APIs
+ // can represent the guest reservation just as the mach_vm_* variants do.
+#if TARGET_OS_TV
+using GuestVmAddress = vm_address_t;
+using GuestVmSize = vm_size_t;
+
+kern_return_t ReserveGuestAddress(task_t task, GuestVmAddress* address, GuestVmSize size, int flags) {
+    return vm_allocate(task, address, size, flags);
+}
+kern_return_t ReleaseGuestAddress(task_t task, GuestVmAddress address, GuestVmSize size) {
+    return vm_deallocate(task, address, size);
+}
+kern_return_t RemapGuestAlias(task_t targetTask, GuestVmAddress* targetAddress, GuestVmSize size,
+                              GuestVmAddress mask, int flags, task_t sourceTask,
+                              GuestVmAddress sourceAddress, boolean_t copy,
+                              vm_prot_t* currentProtection, vm_prot_t* maximumProtection,
+                              vm_inherit_t inheritance) {
+    return vm_remap(targetTask, targetAddress, size, mask, flags, sourceTask, sourceAddress, copy,
+                    currentProtection, maximumProtection, inheritance);
+}
+#else
+using GuestVmAddress = mach_vm_address_t;
+using GuestVmSize = mach_vm_size_t;
+
+kern_return_t ReserveGuestAddress(task_t task, GuestVmAddress* address, GuestVmSize size, int flags) {
+    return mach_vm_allocate(task, address, size, flags);
+}
+kern_return_t ReleaseGuestAddress(task_t task, GuestVmAddress address, GuestVmSize size) {
+    return mach_vm_deallocate(task, address, size);
+}
+kern_return_t RemapGuestAlias(task_t targetTask, GuestVmAddress* targetAddress, GuestVmSize size,
+                              GuestVmAddress mask, int flags, task_t sourceTask,
+                              GuestVmAddress sourceAddress, boolean_t copy,
+                              vm_prot_t* currentProtection, vm_prot_t* maximumProtection,
+                              vm_inherit_t inheritance) {
+    return mach_vm_remap(targetTask, targetAddress, size, mask, flags, sourceTask, sourceAddress, copy,
+                         currentProtection, maximumProtection, inheritance);
+}
+#endif
 
 std::mutex g_mutex;
 std::vector<Store> g_stores;
@@ -82,9 +126,11 @@ void Initialize(const std::vector<RegionRequest>& regions) {
         }
     }
 
-    mach_vm_address_t address = kFixedFlatGuestBase;
-    if (mach_vm_allocate(mach_task_self(), &address, kGuestSpaceSize, VM_FLAGS_FIXED) != KERN_SUCCESS || address != kFixedFlatGuestBase) {
-        throw std::runtime_error("unable to reserve fixed 4 GiB macOS guest address space");
+    GuestVmAddress address = static_cast<GuestVmAddress>(kFixedFlatGuestBase);
+    if (ReserveGuestAddress(mach_task_self(), &address, static_cast<GuestVmSize>(kGuestSpaceSize),
+                            VM_FLAGS_FIXED) != KERN_SUCCESS ||
+        address != static_cast<GuestVmAddress>(kFixedFlatGuestBase)) {
+        throw std::runtime_error("unable to reserve fixed 4 GiB Apple guest address space");
     }
     g_base = reinterpret_cast<uint8_t*>(address);
 
@@ -119,23 +165,23 @@ void Initialize(const std::vector<RegionRequest>& regions) {
             const auto& s = *std::find_if(stores.begin(), stores.end(), [&](const Store& x) {
                 return x.kind == r.backing && x.owned == owned;
             });
-            mach_vm_address_t target = reinterpret_cast<mach_vm_address_t>(g_base + r.base);
+            GuestVmAddress target = reinterpret_cast<GuestVmAddress>(g_base + r.base);
             vm_prot_t cur = VM_PROT_NONE, max = VM_PROT_NONE;
-            const kern_return_t kr = mach_vm_remap(
+            const kern_return_t kr = RemapGuestAlias(
                 mach_task_self(),
                 &target,
-                static_cast<mach_vm_size_t>(RoundUp(r.size, pageSize)),
+                static_cast<GuestVmSize>(RoundUp(r.size, pageSize)),
                 0,
                 VM_FLAGS_FIXED | VM_FLAGS_OVERWRITE,
                 mach_task_self(),
-                reinterpret_cast<mach_vm_address_t>(s.host + Offset(r)),
+                reinterpret_cast<GuestVmAddress>(s.host + Offset(r)),
                 FALSE,
                 &cur,
                 &max,
                 VM_INHERIT_NONE
             );
             if (kr != KERN_SUCCESS) {
-                throw std::runtime_error(std::string("mach_vm_remap guest alias failed: ") + mach_error_string(kr));
+                throw std::runtime_error(std::string("Apple guest alias remap failed: ") + mach_error_string(kr));
             }
             g_mappings.push_back({r.base, r.size, s.host + Offset(r)});
         }
@@ -149,7 +195,7 @@ void Initialize(const std::vector<RegionRequest>& regions) {
                 munmap(s.host, static_cast<size_t>(s.size));
             }
         }
-        mach_vm_deallocate(mach_task_self(), address, kGuestSpaceSize);
+        ReleaseGuestAddress(mach_task_self(), address, static_cast<GuestVmSize>(kGuestSpaceSize));
         g_mappings.clear();
         g_stores.clear();
         g_layout.clear();

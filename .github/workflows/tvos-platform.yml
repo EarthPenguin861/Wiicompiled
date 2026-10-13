@@ -1,0 +1,157 @@
+name: tvOS platform compile
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["ai/tvos-port-*"]
+    paths:
+      - ".github/workflows/tvos-platform.yml"
+      - "runtime/**"
+      - "aurora-main/**"
+      - "docs/porting-tvos.md"
+  pull_request:
+    paths:
+      - "runtime/**"
+      - "aurora-main/**"
+      - "docs/porting-tvos.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tvos-platform-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tvos-platform-compile:
+    name: tvOS SDK compile (no game assets)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Configure against the Apple TV device SDK
+        run: |
+          cmake -S runtime -B build-tvos-platform -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_SYSTEM_NAME=tvOS \
+            -DCMAKE_OSX_SYSROOT=appletvos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
+            -DMKW_BUILD_PRODUCTS=OFF \
+            -DMKW_PLATFORM_TESTS_ONLY=ON
+
+      - name: Compile platform and runtime contract tests
+        run: |
+          cmake --build build-tvos-platform --parallel 3 --target \
+            mkw_platform_paths_tests \
+            mkw_runtime_config_tests \
+            mkw_nand_save_tests \
+            mkw_nand_settings_tests \
+            mkw_sc_serial_tests \
+            mkw_input_expr_tests
+          file build-tvos-platform/mkw_platform_paths_tests.app/mkw_platform_paths_tests
+
+      # CMake wraps tvOS executables in .app directories even for this compile-only
+      # check. Do not execute these arm64 device binaries on the macOS runner.
+
+  tvos-runtime-audit:
+    name: tvOS dependency and native runtime compile audit
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # The pinned Dawn generator uses Jinja APIs removed from Python 3.14.
+      # Keep the source build on a known-compatible interpreter rather than
+      # inheriting whichever Homebrew Python the runner currently provides.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Configure the runtime and graphics dependencies
+        run: |
+          cmake -S runtime -B build-tvos-audit -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DPython3_EXECUTABLE="$(python3 -c 'import sys; print(sys.executable)')" \
+            -DCMAKE_SYSTEM_NAME=tvOS \
+            -DCMAKE_OSX_SYSROOT=appletvos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
+            -DMKW_BUILD_PRODUCTS=OFF
+
+      - name: Compile native runtime and link a real tvOS Metal smoke app
+        run: |
+          cmake --build build-tvos-audit --parallel 3 --target \
+            mkw_tvos_native_compile \
+            WiiCompiledTvOSSmoke \
+            WiiCompiledTvOSSDLSmoke
+
+      - name: Audit linked tvOS executable for build-machine dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          APP="$(find build-tvos-audit -type d -name WiiCompiledTvOSSmoke.app -print -quit)"
+          test -n "$APP"
+          EXECUTABLE="$APP/WiiCompiledTvOSSmoke"
+          test -f "$EXECUTABLE"
+          echo "Linked dynamic dependencies:"
+          DEPS="$(otool -L "$EXECUTABLE" | sed '1d')"
+          printf '%s\n' "$DEPS"
+          if grep -E '(@rpath/)?libpng[^[:space:]]*|/Users/runner/work/[^[:space:]]*|_deps/[^[:space:]]*\.dylib' <<<"$DEPS"; then
+            echo "::error::tvOS executable contains an unbundled libpng or build-tree dylib dependency"
+            exit 1
+          fi
+          if otool -l "$EXECUTABLE" | grep -F '/Users/runner/work/'; then
+            echo "::error::tvOS executable contains an RPATH into the GitHub runner workspace"
+            exit 1
+          fi
+
+      - name: Package the asset-free renderer smoke app
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          APP="$(find build-tvos-audit -type d -name WiiCompiledTvOSSmoke.app -print -quit)"
+          test -n "$APP"
+          plutil -lint "$APP/Info.plist"
+          IPA="$RUNNER_TEMP/WiiCompiled-tvOS-renderer-smoke.ipa"
+          bash scripts/package-tvos-ipa.sh "$APP" "$IPA"
+          unzip -t "$IPA"
+          echo "Renderer smoke IPA: $IPA"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: WiiCompiled-tvOS-renderer-smoke
+          path: ${{ runner.temp }}/WiiCompiled-tvOS-renderer-smoke.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Package the SDL-only startup diagnostic app
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          APP="$(find build-tvos-audit -type d -name WiiCompiledTvOSSDLSmoke.app -print -quit)"
+          test -n "$APP"
+          plutil -lint "$APP/Info.plist"
+          IPA="$RUNNER_TEMP/WiiCompiled-tvOS-sdl-smoke.ipa"
+          bash scripts/package-tvos-ipa.sh "$APP" "$IPA"
+          unzip -t "$IPA"
+          unzip -Z1 "$IPA" | grep -Fx "Payload/WiiCompiledTvOSSDLSmoke.app/WiiCompiledTvOSSDLSmoke"
+          echo "SDL-only diagnostic IPA: $IPA"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: WiiCompiled-tvOS-sdl-smoke
+          path: ${{ runner.temp }}/WiiCompiled-tvOS-sdl-smoke.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+      # This is a renderer/entrypoint smoke app, not the game. The translated
+      # Mario Kart products require a local translator manifest and user-owned
+      # RMCP01 game data, which must never be placed in GitHub Actions artifacts.

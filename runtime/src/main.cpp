@@ -71,6 +71,11 @@
 #include "runtime_log.h"
 #include "runtime_product.h"
 #include "recomp_mod_loader.h"
+// SDL3 supplies the real UIKit/tvOS entry point inline from this header. Desktop
+// builds define SDL_MAIN_HANDLED; the tvOS target intentionally does not, so its
+// ordinary main() below is adapted to SDL_main and invoked by SDL_UIKitRunApp.
+#include <SDL3/SDL_main.h>
+
 #include <aurora/aurora.h>
 #include <aurora/gfx.h>
 #include <dolphin/gx/GXAurora.h>

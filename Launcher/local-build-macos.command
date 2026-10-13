@@ -16,7 +16,8 @@ Usage: local-build-macos.command --output-dir DIR [options]
 
   --workspace DIR                 Repository root (default: this script's parent directory)
   --profile {base|retro-rewind|both}  Product to build (default: base)
-  --output-dir DIR                Output .app directory (required; Retro Rewind for both)
+  --output-dir DIR                Output .app directory (required for a native build)
+  --translate-only                Extract/translate and emit shards, then skip native macOS build
   --base-output-dir DIR           Base .app directory (required with --profile both)
   --game IMAGE --nodtool PATH     Extract and verify a clean PAL RMCP01 disc image first
   --retro-rewind-package-dir DIR  RetroRewind6 directory (required for Retro Rewind)
@@ -32,7 +33,7 @@ EOF
 
 workspace="$default_workspace"; profile=base; output_dir=""; base_output_dir=""
 game=""; nodtool=""; retro_root=""; retro_wfc=""; skip_retro_wfc=0; force_clean=0
-parallel=0; cmake_bin=cmake; ninja_bin=ninja; dotnet_bin=dotnet; translator_bin=""
+parallel=0; cmake_bin=cmake; ninja_bin=ninja; dotnet_bin=dotnet; translator_bin=""; translate_only=0
 while (($#)); do
     case "$1" in
         --workspace) workspace=${2:-}; shift 2 ;;
@@ -50,6 +51,7 @@ while (($#)); do
         --ninja) ninja_bin=${2:-}; shift 2 ;;
         --dotnet) dotnet_bin=${2:-}; shift 2 ;;
         --translator-bin) translator_bin=${2:-}; shift 2 ;;
+        --translate-only) translate_only=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) fail "unknown option: $1" ;;
     esac
@@ -60,7 +62,10 @@ macos_arch=$(uname -m)
 case "$macos_arch" in arm64|x86_64) ;; *) fail "unsupported macOS architecture: $macos_arch" ;; esac
 macos_deployment_target=12.0
 workspace=$(cd "$workspace" && pwd)
-[[ -n "$output_dir" ]] || fail '--output-dir is required'
+if [[ -z "$output_dir" && "$translate_only" -eq 1 ]]; then
+    output_dir="$workspace/build/translation-only"
+fi
+[[ -n "$output_dir" ]] || fail '--output-dir is required unless --translate-only is used'
 case "$profile" in base|retro-rewind|both) ;; *) fail '--profile must be base, retro-rewind, or both' ;; esac
 builds_retro=0; [[ "$profile" != base ]] && builds_retro=1
 if [[ "$profile" == both && -z "$base_output_dir" ]]; then fail '--base-output-dir is required with --profile both'; fi
@@ -132,6 +137,12 @@ step generate-data-init 'Generating local game data initialization'; translator 
 args=(emit-build-shards --project "$project" --base-metadata "$metadata" --base-functions-dir "$functions" --native-source-dir "$workspace/runtime/src" --out "$shards")
 if (( builds_retro )); then args+=(--resolved-profile "$mod_out/resolved_dispatch_profile.json" --retro-cpp-dir "$mod_out/cpp"); fi
 step emit-build-shards 'Preparing native build shards'; translator "${args[@]}"
+
+if (( translate_only )); then
+    step translation-complete 'Translation output and build shards are ready; native macOS build skipped'
+    printf 'MKWCBUILD:OUTPUT=%s\n' "$shards"
+    exit 0
+fi
 
 step configure-native 'Configuring the native toolchain'
 # Use Aurora's pinned SDL3 source on macOS.  A system SDL3 can be older than

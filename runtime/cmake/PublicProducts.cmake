@@ -74,11 +74,18 @@ function(mkw_configure_translated_target target)
     mkw_bound_translated_compiles(${target})
 endfunction()
 
+# SDL's Apple mobile entry-point shim must own main() so it can enter through
+# the platform app lifecycle. Desktop targets retain the explicit handled mode.
+set(MKW_SDL_MAIN_DEFINITION SDL_MAIN_HANDLED)
+if(MKW_PLATFORM_TVOS)
+    set(MKW_SDL_MAIN_DEFINITION "")
+endif()
+
 add_library(mkw_runtime_common OBJECT ${SOURCES})
 mkw_configure_object_target(mkw_runtime_common)
 target_compile_features(mkw_runtime_common PRIVATE cxx_std_20)
 target_compile_definitions(mkw_runtime_common PRIVATE
-    SDL_MAIN_HANDLED
+    ${MKW_SDL_MAIN_DEFINITION}
     _DISABLE_STRING_ANNOTATION _DISABLE_VECTOR_ANNOTATION)
 target_link_libraries(mkw_runtime_common PRIVATE
     aurora::gx aurora::pad aurora::si aurora::vi aurora::mtx)
@@ -184,6 +191,21 @@ if(MKW_HAVE_RETRO_REWIND)
 endif()
 
 function(mkw_configure_product target)
+    if(MKW_PLATFORM_TVOS)
+        set(_mkw_tvos_bundle_identifier "com.earthpenguin.wiicompiled")
+        if(target STREQUAL "RetroRewind")
+            set(_mkw_tvos_bundle_identifier "com.earthpenguin.wiicompiled.retrorerewind")
+        endif()
+        set_target_properties(${target} PROPERTIES
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_GUI_IDENTIFIER "${_mkw_tvos_bundle_identifier}"
+            MACOSX_BUNDLE_BUNDLE_VERSION "1"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
+            MACOSX_BUNDLE_INFO_PLIST "${MKW_RUNTIME_SOURCE_DIR}/cmake/tvos/Info.plist.in"
+            XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${_mkw_tvos_bundle_identifier}"
+            XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "3"
+            XCODE_ATTRIBUTE_TVOS_DEPLOYMENT_TARGET "${CMAKE_OSX_DEPLOYMENT_TARGET}")
+    endif()
     target_sources(${target} PRIVATE $<TARGET_OBJECTS:mkw_runtime_common>)
     # Startup CPU check. Must stay a separate object library so it keeps the
     # plain baseline ISA while everything around it is built for x86-64-v3.
@@ -198,7 +220,7 @@ function(mkw_configure_product target)
         "${MKW_RUNTIME_SOURCE_DIR}/.."
         "${MKW_RUNTIME_SOURCE_DIR}/../aurora-main/include")
     target_compile_definitions(${target} PRIVATE
-        SDL_MAIN_HANDLED _DISABLE_STRING_ANNOTATION _DISABLE_VECTOR_ANNOTATION TARGET_PC)
+        ${MKW_SDL_MAIN_DEFINITION} _DISABLE_STRING_ANNOTATION _DISABLE_VECTOR_ANNOTATION TARGET_PC)
     target_compile_features(${target} PRIVATE cxx_std_20)
     mkw_apply_common_compile_options(${target})
     # The dispatch-table and registration shards compile inside the product target itself and
@@ -264,6 +286,18 @@ function(mkw_configure_product target)
         endforeach()
     endif()
 
+    # A tvOS app cannot read the build machine's filesystem after installation.
+    # Bundle the caller-supplied, locally extracted disc DATA inside this app.
+    # The source directory is never copied into the repository or a CI artifact.
+    if(MKW_PLATFORM_TVOS)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_DIR:${target}>/Assets"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${MKW_TVOS_DVD_DATA_DIR}" "$<TARGET_BUNDLE_DIR:${target}>/Assets/DATA"
+            COMMENT "Bundling user-provided Mario Kart Wii DATA into ${target}.app"
+            VERBATIM)
+    endif()
+
     set(MKW_WII_BOOTSTRAP_SOURCE_DIR "${MKW_RUNTIME_SOURCE_DIR}/assets/wii")
     if(NOT EXISTS "${MKW_WII_BOOTSTRAP_SOURCE_DIR}/shared2/wc24")
         message(FATAL_ERROR "Missing Wii first-run bootstrap payload: ${MKW_WII_BOOTSTRAP_SOURCE_DIR}")
@@ -311,7 +345,11 @@ function(mkw_configure_product target)
     endif()
 endfunction()
 
-add_executable(WiiCompiled "${MKW_BASE_PRODUCT_SOURCE}" ${MKW_BASE_REGISTRATION_SOURCES})
+if(MKW_PLATFORM_TVOS)
+    add_executable(WiiCompiled MACOSX_BUNDLE "${MKW_BASE_PRODUCT_SOURCE}" ${MKW_BASE_REGISTRATION_SOURCES})
+else()
+    add_executable(WiiCompiled "${MKW_BASE_PRODUCT_SOURCE}" ${MKW_BASE_REGISTRATION_SOURCES})
+endif()
 mkw_configure_product(WiiCompiled)
 target_precompile_headers(WiiCompiled PRIVATE
     "${MKW_RUNTIME_SOURCE_DIR}/include/mkw_pch.h")
@@ -320,7 +358,11 @@ if(TARGET mkw_base_sensitive)
 endif()
 
 if(MKW_HAVE_RETRO_REWIND)
-    add_executable(RetroRewind "${MKW_RETRO_REWIND_PRODUCT_SOURCE}" ${MKW_RETRO_REGISTRATION_SOURCES})
+    if(MKW_PLATFORM_TVOS)
+        add_executable(RetroRewind MACOSX_BUNDLE "${MKW_RETRO_REWIND_PRODUCT_SOURCE}" ${MKW_RETRO_REGISTRATION_SOURCES})
+    else()
+        add_executable(RetroRewind "${MKW_RETRO_REWIND_PRODUCT_SOURCE}" ${MKW_RETRO_REGISTRATION_SOURCES})
+    endif()
     mkw_configure_product(RetroRewind)
     target_precompile_headers(RetroRewind REUSE_FROM WiiCompiled)
     if(TARGET mkw_retro_sensitive)
@@ -336,11 +378,13 @@ else()
     message(STATUS "RetroRewind target disabled (run translate-mod and emit-build-shards)")
 endif()
 
-# Windows, Linux and Intel macOS x86_64 use the selected profile. AArch64
-# builds are compiled locally for the host that will run them, so both Linux
-# and Apple Silicon use the compiler's native CPU tuning rather than leaving
-# target-specific performance on the table.
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64|X86_64)$")
+# Never use -mcpu=native for tvOS: the build host is not the Apple TV CPU,
+# and Apple TV HD (the first target) is A8-class. Keep a generic arm64 baseline.
+if(MKW_PLATFORM_TVOS)
+    set(MKW_BASELINE_ARCH_FLAG "")
+# Windows, Linux and Intel macOS x86_64 use the selected profile. Desktop AArch64
+# builds can use host-native tuning because they run on that host.
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64|X86_64)$")
     set(MKW_BASELINE_ARCH_FLAG -march=x86-64-${MKW_X86_CPU_PROFILE})
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
     set(MKW_BASELINE_ARCH_FLAG -mcpu=native)

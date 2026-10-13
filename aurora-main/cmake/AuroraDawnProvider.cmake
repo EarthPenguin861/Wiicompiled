@@ -42,26 +42,37 @@ endfunction()
 # ── Auto: resolve provider based on platform availability ──
 set(_aurora_dawn_provider "${AURORA_DAWN_PROVIDER}")
 if (_aurora_dawn_provider STREQUAL "auto")
-  # Prebuilt Dawn packages available for: windows-{amd64,arm64}, linux-{x86_64,aarch64}, darwin-{arm64,x86_64}
-  set(_has_package FALSE)
-  if (WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|x86_64|ARM64|aarch64)$")
-    set(_has_package TRUE)
-  elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|aarch64)$")
-    set(_has_package TRUE)
-  elseif (APPLE AND (CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|x86_64)$" OR CMAKE_OSX_ARCHITECTURES MATCHES "^(arm64|x86_64)$"))
-    set(_has_package TRUE)
-  endif ()
-
-  if (_has_package)
-    set(_aurora_dawn_provider "package")
+  # No tvOS Dawn binary is published by the package provider. Never derive a
+  # "tvos-arm64" URL from APPLE + arm64: that would select a nonexistent
+  # desktop-style package. Source compilation is only a porting experiment;
+  # upstream's support matrix currently lists tvOS as unsupported.
+  if (CMAKE_SYSTEM_NAME STREQUAL "tvOS")
+    set(_aurora_dawn_provider "vendor")
+    message(WARNING
+      "aurora: tvOS has no prebuilt Dawn package; building Dawn from source. "
+      "Upstream does not currently support tvOS, so this is experimental and may fail.")
   else ()
-    set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL ON)
-    find_package(Dawn QUIET)
-    set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL OFF)
-    if (Dawn_FOUND)
-      set(_aurora_dawn_provider "system")
+    # Prebuilt packages available: Windows, Linux and desktop Darwin only.
+    set(_has_package FALSE)
+    if (WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|x86_64|ARM64|aarch64)$")
+      set(_has_package TRUE)
+    elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|aarch64)$")
+      set(_has_package TRUE)
+    elseif (APPLE AND (CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|x86_64)$" OR CMAKE_OSX_ARCHITECTURES MATCHES "^(arm64|x86_64)$"))
+      set(_has_package TRUE)
+    endif ()
+
+    if (_has_package)
+      set(_aurora_dawn_provider "package")
     else ()
-      set(_aurora_dawn_provider "vendor")
+      set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL ON)
+      find_package(Dawn QUIET)
+      set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL OFF)
+      if (Dawn_FOUND)
+        set(_aurora_dawn_provider "system")
+      else ()
+        set(_aurora_dawn_provider "vendor")
+      endif ()
     endif ()
   endif ()
   set(AURORA_DAWN_PROVIDER "${_aurora_dawn_provider}" CACHE STRING "" FORCE)
@@ -70,6 +81,11 @@ endif ()
 
 if (_aurora_dawn_provider STREQUAL "vendor")
   # ── Vendor: FetchContent build from source ──
+  if (CMAKE_SYSTEM_NAME STREQUAL "tvOS")
+    message(WARNING
+      "aurora: attempting an experimental Dawn source build for tvOS; "
+      "upstream lists tvOS as unsupported, so dependency configuration or rendering may fail.")
+  endif ()
   if (NOT TARGET webgpu_dawn)
     message(STATUS "aurora: Fetching Dawn (provider=vendor, linkage=${AURORA_DAWN_LINKAGE})")
 
@@ -99,8 +115,14 @@ if (_aurora_dawn_provider STREQUAL "vendor")
     endif ()
 
     include(FetchContent)
+    string(LENGTH "${AURORA_DAWN_SOURCE_REV}" _aurora_dawn_source_rev_length)
+    if (NOT _aurora_dawn_source_rev_length EQUAL 40 OR
+        NOT AURORA_DAWN_SOURCE_REV MATCHES "^[0-9a-fA-F]+$")
+      message(FATAL_ERROR
+        "AURORA_DAWN_SOURCE_REV must be a 40-character google/dawn commit SHA; got '${AURORA_DAWN_SOURCE_REV}'")
+    endif ()
     FetchContent_Declare(dawn
-      URL "https://github.com/google/dawn/archive/refs/tags/${AURORA_DAWN_VERSION}.tar.gz"
+      URL "https://github.com/google/dawn/archive/${AURORA_DAWN_SOURCE_REV}.tar.gz"
       DOWNLOAD_EXTRACT_TIMESTAMP FALSE
       EXCLUDE_FROM_ALL
     )

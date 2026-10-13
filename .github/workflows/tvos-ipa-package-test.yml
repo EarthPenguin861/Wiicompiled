@@ -1,0 +1,99 @@
+name: tvOS IPA packaging helper
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["ai/tvos-port-*"]
+    paths:
+      - "scripts/package-tvos-ipa.sh"
+      - "scripts/build-tvos-local.sh"
+      - "Launcher/local-build-macos.command"
+      - "runtime/cmake/tvos/Info.plist.in"
+      - ".github/workflows/tvos-ipa-package-test.yml"
+  pull_request:
+    paths:
+      - "scripts/package-tvos-ipa.sh"
+      - "runtime/cmake/tvos/Info.plist.in"
+      - ".github/workflows/tvos-ipa-package-test.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  package-smoke-test:
+    name: Build bundle from project plist template and package IPA
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Validate local build script syntax and help
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash -n scripts/build-tvos-local.sh
+          bash -n scripts/package-tvos-ipa.sh
+          bash -n Launcher/local-build-macos.command
+          bash scripts/build-tvos-local.sh --help >/dev/null
+          bash Launcher/local-build-macos.command --help >/dev/null
+
+      - name: Create a minimal tvOS app using the production plist template
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          SRC="$RUNNER_TEMP/tvos-bundle-src"
+          BUILD="$RUNNER_TEMP/tvos-bundle-build"
+          mkdir -p "$SRC"
+
+          cat > "$SRC/main.c" <<'C'
+          int main(void) { return 0; }
+          C
+
+          cat > "$SRC/CMakeLists.txt" <<'CMAKE'
+          cmake_minimum_required(VERSION 3.25)
+          project(WiiCompiledTvOSBundleSmoke LANGUAGES C)
+          add_executable(WiiCompiled MACOSX_BUNDLE main.c)
+          set_target_properties(WiiCompiled PROPERTIES
+              MACOSX_BUNDLE TRUE
+              MACOSX_BUNDLE_GUI_IDENTIFIER "com.earthpenguin.wiicompiled.packagingtest"
+              MACOSX_BUNDLE_BUNDLE_VERSION "1"
+              MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
+              MACOSX_BUNDLE_INFO_PLIST "$ENV{GITHUB_WORKSPACE}/runtime/cmake/tvos/Info.plist.in"
+              XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "3"
+              XCODE_ATTRIBUTE_TVOS_DEPLOYMENT_TARGET "14.0")
+          CMAKE
+
+          cmake -S "$SRC" -B "$BUILD" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_SYSTEM_NAME=tvOS \
+            -DCMAKE_OSX_SYSROOT=appletvos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0
+          cmake --build "$BUILD" --parallel 2 --target WiiCompiled
+
+          APP="$(find "$BUILD" -type d -name WiiCompiled.app -print -quit)"
+          test -n "$APP"
+          echo "TVOS_SMOKE_APP=$APP" >> "$GITHUB_ENV"
+
+      - name: Validate generated tvOS app metadata
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          APP="$TVOS_SMOKE_APP"
+          plutil -lint "$APP/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")" = "com.earthpenguin.wiicompiled.packagingtest"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleSupportedPlatforms:0' "$APP/Info.plist")" = "AppleTVOS"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:0' "$APP/Info.plist")" = "3"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP/Info.plist")" = "14.0"
+
+      - name: Package and verify the IPA structure
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          IPA="$RUNNER_TEMP/WiiCompiled-tvOS.ipa"
+          bash scripts/package-tvos-ipa.sh "$TVOS_SMOKE_APP" "$IPA"
+          unzip -t "$IPA"
+          unzip -Z1 "$IPA" | grep -Fx "Payload/WiiCompiled.app/Info.plist"
+          unzip -Z1 "$IPA" | grep -Fx "Payload/WiiCompiled.app/WiiCompiled"

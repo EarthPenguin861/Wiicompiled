@@ -1,14 +1,47 @@
 cmake_minimum_required(VERSION 3.25)
 
-# Dawn's pinned macOS artifacts target 12.0. Set the same floor before project()
-# initializes the Apple toolchain so direct developer CMake invocations cannot
-# accidentally inherit the running SDK's deployment version. This cache entry
-# is harmless on non-Apple platforms and remains overridable by a caller.
-if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+# tvOS and macOS have different SDKs, deployment targets, app bundles, and
+# graphics-dependency support. Detect tvOS before project() so CMake can
+# initialize the correct Apple toolchain and use a tvOS deployment floor.
+if(CMAKE_SYSTEM_NAME STREQUAL "tvOS" OR CMAKE_OSX_SYSROOT MATCHES "[Tt][Vv][Oo][Ss]")
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "tvOS")
+        message(FATAL_ERROR
+            "Use -DCMAKE_SYSTEM_NAME=tvOS when targeting Apple TV; setting only CMAKE_OSX_SYSROOT is insufficient.")
+    endif()
+    set(MKW_REQUESTED_TVOS TRUE)
+    if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+        # Dawn's condition_variable implementation needs tvOS 14.0 APIs.
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING
+            "Minimum tvOS version supported by WiiCompiled" FORCE)
+    endif()
+elseif(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    # Dawn's pinned macOS artifacts target 12.0.
     set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING
         "Minimum macOS version supported by WiiCompiled" FORCE)
 endif()
 project(mkw_recompiled)
+
+if(MKW_REQUESTED_TVOS)
+    # Dawn/Abseil use try_compile() checks during configure. Export the language
+    # standard as cache defaults as well as normal target properties, otherwise
+    # those checks can run in Clang's pre-C++17 default mode even though Aurora
+    # itself compiles as C++20.
+    set(CMAKE_CXX_STANDARD 20 CACHE STRING
+        "Default C++ standard for the experimental tvOS build" FORCE)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON CACHE BOOL
+        "Require the selected C++ standard for the tvOS build" FORCE)
+    set(CMAKE_CXX_EXTENSIONS OFF CACHE BOOL
+        "Disable compiler-specific C++ language extensions for tvOS" FORCE)
+    # Some vendored dependency feature probes do not consistently inherit
+    # target-level CXX_STANDARD. Pass the standard via CXX flags (not
+    # CMAKE_REQUIRED_FLAGS, which also affects C probes such as SDL's pthread
+    # checks and would incorrectly make those fail).
+    string(FIND "${CMAKE_CXX_FLAGS}" "-std=c++" _mkw_has_std_flag)
+    if(_mkw_has_std_flag EQUAL -1)
+        string(APPEND CMAKE_CXX_FLAGS " -std=c++20")
+    endif()
+    message(STATUS "Configuring experimental WiiCompiled tvOS target (not yet a validated device port)")
+endif()
 
 if(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(Clang|AppleClang)$" OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
     message(FATAL_ERROR "WiiCompiled requires a 64-bit Clang toolchain")
@@ -28,6 +61,11 @@ endif()
 
 if(WIN32 AND MINGW AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64|X86_64)$")
     set(MKW_PLATFORM_WINDOWS TRUE)
+elseif(MKW_REQUESTED_TVOS AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|ARM64|aarch64)$")
+    set(MKW_PLATFORM_TVOS TRUE)
+elseif(MKW_REQUESTED_TVOS)
+    message(FATAL_ERROR
+        "WiiCompiled's tvOS app target currently supports Apple TV devices (arm64, -DCMAKE_OSX_SYSROOT=appletvos), not simulator/x86 builds")
 elseif(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64|X86_64|arm64|ARM64)$")
     set(MKW_PLATFORM_MACOS TRUE)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64|X86_64)$")
@@ -39,7 +77,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(
     set(MKW_PLATFORM_LINUX TRUE)
 else()
     message(FATAL_ERROR
-        "WiiCompiled supports 64-bit LLVM-MinGW Clang on Windows, native Linux x86_64/aarch64, or Apple Clang on macOS x86_64/arm64")
+        "WiiCompiled supports 64-bit LLVM-MinGW Clang on Windows, native Linux x86_64/aarch64, Apple Clang on macOS x86_64/arm64, or experimental Apple TV arm64")
 endif()
 
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -47,6 +85,16 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Release")
 endif()
 
 option(MKW_BUILD_PRODUCTS "Build translated WiiCompiled product targets" ON)
+set(MKW_TVOS_DVD_DATA_DIR "" CACHE PATH
+    "Optional path to the user-owned extracted Mario Kart Wii DATA directory for tvOS bundles")
+if(MKW_PLATFORM_TVOS AND MKW_BUILD_PRODUCTS)
+    if(NOT IS_DIRECTORY "${MKW_TVOS_DVD_DATA_DIR}/files" OR
+       NOT EXISTS "${MKW_TVOS_DVD_DATA_DIR}/sys/fst.bin")
+        message(FATAL_ERROR
+            "tvOS product builds require -DMKW_TVOS_DVD_DATA_DIR=/path/to/Assets/DATA containing files/ and sys/fst.bin. This is your local game data; do not commit it.")
+    endif()
+    message(STATUS "Bundling user-provided Wii DATA into the tvOS app: ${MKW_TVOS_DVD_DATA_DIR}")
+endif()
 option(MKW_BUILD_PSQ_TESTS "Build focused PSQ ISA tests" OFF)
 set(MKW_X86_CPU_PROFILE "v3" CACHE STRING
     "Minimum x86-64 CPU profile for translated products (v2 or v3)")
@@ -75,7 +123,13 @@ endif()
 # aurora-main and its third-party tree stay unaffected.
 set(MKW_PROJECT_COMPILE_DEFINITIONS NOMINMAX)
 
-set(CMAKE_CXX_STANDARD 17)
+# Dawn/Abseil's configure-time probes must see the same language mode as
+# the actual targets. Keep the existing C++17 desktop policy unchanged.
+if(MKW_PLATFORM_TVOS)
+    set(CMAKE_CXX_STANDARD 20)
+else()
+    set(CMAKE_CXX_STANDARD 17)
+endif()
 
 # Declared before the vendored libraries so the third-party block below can
 # branch on it and so cmake/NativePrebuilt.cmake is included after the names it
@@ -222,7 +276,7 @@ else()
         set(DAWN_ENABLE_VULKAN ON CACHE BOOL "" FORCE)
         set(DAWN_ENABLE_METAL OFF CACHE BOOL "" FORCE)
         set(TINT_BUILD_HLSL_WRITER ON CACHE BOOL "" FORCE)
-    elseif(MKW_PLATFORM_MACOS)
+    elseif(MKW_PLATFORM_MACOS OR MKW_PLATFORM_TVOS)
         set(DAWN_ENABLE_D3D12 OFF CACHE BOOL "" FORCE)
         set(DAWN_ENABLE_VULKAN OFF CACHE BOOL "" FORCE)
         set(DAWN_ENABLE_METAL ON CACHE BOOL "" FORCE)
@@ -260,6 +314,17 @@ else()
     set(SDL_SHARED OFF CACHE BOOL "" FORCE)
     set(SDL_STATIC ON CACHE BOOL "" FORCE)
     set(SDL_TEST OFF CACHE BOOL "" FORCE)
+
+    # Apple TV app bundles must not depend on build-tree dylibs. Aurora's
+    # dependency block uses BUILD_SHARED_LIBS to choose shared zlib/libpng
+    # targets; with the variable unset, libpng becomes a dylib whose install
+    # name/RPATH points into the CI build directory. Force static third-party
+    # dependencies for tvOS so the app is self-contained apart from Apple
+    # system frameworks. Keep desktop platform linkage defaults unchanged.
+    if(MKW_PLATFORM_TVOS)
+        set(BUILD_SHARED_LIBS OFF CACHE BOOL
+            "Build third-party dependencies statically for tvOS app bundles" FORCE)
+    endif()
 
     # MinGW/WSL can choke on SDL precompiled headers; disable PCH for aurora/SDL.
     set(CMAKE_DISABLE_PRECOMPILE_HEADERS ON)
@@ -321,13 +386,16 @@ endif()
 # a registration file is silently never compiled and never errors. The stale-glob
 # failure mode is worth far more than the milliseconds.
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.cpp")
-if(MKW_PLATFORM_MACOS)
+if(MKW_PLATFORM_TVOS)
+    # External-audio activity detection uses macOS CoreAudio process APIs;
+    # tvOS doesn't ship CoreAudio.framework's desktop process API.
+    list(REMOVE_ITEM SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/external_audio_macos.cpp")
+endif()
+if(MKW_PLATFORM_MACOS OR MKW_PLATFORM_TVOS)
     list(REMOVE_ITEM SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/guest_flat_memory.cpp")
-    if(MKW_PLATFORM_MACOS_ARM64)
-        # HostContext's Apple Silicon backend is implemented in a small assembly
-        # companion. It must be part of the product runtime as well as the
-        # standalone context test; otherwise the final executable is missing
-        # mkw_co_init/mkw_co_switch at link time.
+    if(MKW_PLATFORM_MACOS_ARM64 OR MKW_PLATFORM_TVOS)
+        # The AArch64 host-context assembly uses the Apple arm64 calling
+        # convention and is shared by macOS and tvOS device builds.
         enable_language(ASM)
         list(APPEND SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/platform/macos/co_switch.S")
     endif()
@@ -402,6 +470,70 @@ else()
             endif()
         endif()
         set_target_properties(mkw_macos_native_compile PROPERTIES UNITY_BUILD OFF)
+    elseif(MKW_PLATFORM_TVOS)
+        # Compile-only audit of runtime sources for the Apple TV device SDK.
+        # Product entry/registration sources and two generated-code-dependent
+        # sources are excluded, so this still works without a private game dump
+        # or translator output. Building the object target also builds the
+        # Aurora/SDL/Dawn static libraries listed in target_link_libraries.
+        set(MKW_TVOS_NATIVE_AUDIT_SOURCES ${SOURCES})
+        list(REMOVE_ITEM MKW_TVOS_NATIVE_AUDIT_SOURCES
+            "${CMAKE_CURRENT_LIST_DIR}/src/abi_bridge.cpp"
+            "${CMAKE_CURRENT_LIST_DIR}/src/hle/os/os_alarm.cpp"
+            "${MKW_BASE_PRODUCT_SOURCE}"
+            "${MKW_RETRO_REWIND_PRODUCT_SOURCE}")
+        add_library(mkw_tvos_native_compile OBJECT ${MKW_TVOS_NATIVE_AUDIT_SOURCES})
+        target_include_directories(mkw_tvos_native_compile PRIVATE
+            "${CMAKE_CURRENT_LIST_DIR}/include" "${CMAKE_CURRENT_LIST_DIR}/src"
+            "${CMAKE_CURRENT_LIST_DIR}/.." "${CMAKE_CURRENT_LIST_DIR}/../aurora-main/include")
+        target_compile_features(mkw_tvos_native_compile PRIVATE cxx_std_20)
+        # Do not define SDL_MAIN_HANDLED here: the tvOS build must preserve SDL's
+        # mobile main-entrypoint adaptation instead of compiling a desktop main.
+        target_compile_definitions(mkw_tvos_native_compile PRIVATE TARGET_PC
+            _DISABLE_STRING_ANNOTATION _DISABLE_VECTOR_ANNOTATION)
+        target_link_libraries(mkw_tvos_native_compile PRIVATE
+            aurora::gx aurora::pad aurora::si aurora::vi aurora::mtx
+            mkw::pugixml mkw::toml11 mkw::cryptopp mkw::mbedtls)
+        set_target_properties(mkw_tvos_native_compile PROPERTIES UNITY_BUILD OFF)
+
+        # This real tvOS app target validates executable linking, SDL's UIKit
+        # entrypoint, the Dawn/Metal framework closure, and the production bundle
+        # plist without a generated game manifest or user-owned game data.
+        add_executable(WiiCompiledTvOSSmoke MACOSX_BUNDLE
+            "${CMAKE_CURRENT_LIST_DIR}/tests/tvos_link_smoke.cpp")
+        target_compile_features(WiiCompiledTvOSSmoke PRIVATE cxx_std_20)
+        target_link_libraries(WiiCompiledTvOSSmoke PRIVATE
+            aurora::gx aurora::pad aurora::si aurora::vi aurora::mtx)
+        set_target_properties(WiiCompiledTvOSSmoke PROPERTIES
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_GUI_IDENTIFIER "com.earthpenguin.wiicompiled.smoke"
+            MACOSX_BUNDLE_BUNDLE_NAME "WiiCompiled tvOS Smoke"
+            MACOSX_BUNDLE_BUNDLE_VERSION "1"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
+            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_LIST_DIR}/cmake/tvos/Info.plist.in"
+            XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.earthpenguin.wiicompiled.smoke"
+            XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "3"
+            XCODE_ATTRIBUTE_TVOS_DEPLOYMENT_TARGET "${CMAKE_OSX_DEPLOYMENT_TARGET}")
+
+        # Isolate app startup + SDL's native Apple renderer from Aurora/Dawn.
+        # The Metal smoke screen has launched on-device but showed only the
+        # launch gradient, so this app gives us a clean split: if this renders,
+        # the failure is downstream in Aurora/Dawn; if not, it is earlier in
+        # SDL/UIKit/window startup.
+        add_executable(WiiCompiledTvOSSDLSmoke MACOSX_BUNDLE
+            "${CMAKE_CURRENT_LIST_DIR}/tests/tvos_sdl_smoke.cpp")
+        target_compile_features(WiiCompiledTvOSSDLSmoke PRIVATE cxx_std_20)
+        target_link_libraries(WiiCompiledTvOSSDLSmoke PRIVATE ${AURORA_SDL3_TARGET})
+        set_target_properties(WiiCompiledTvOSSDLSmoke PROPERTIES
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_GUI_IDENTIFIER "com.earthpenguin.wiicompiled.sdl-smoke"
+            MACOSX_BUNDLE_BUNDLE_NAME "WiiCompiled SDL tvOS Diagnostic"
+            MACOSX_BUNDLE_BUNDLE_VERSION "1"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
+            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_LIST_DIR}/cmake/tvos/Info.plist.in"
+            XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.earthpenguin.wiicompiled.sdl-smoke"
+            XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "3"
+            XCODE_ATTRIBUTE_TVOS_DEPLOYMENT_TARGET "${CMAKE_OSX_DEPLOYMENT_TARGET}")
     endif()
     add_custom_target(mkw_platform_paths_check DEPENDS mkw_platform)
     message(STATUS "Translated product targets disabled (MKW_BUILD_PRODUCTS=OFF)")

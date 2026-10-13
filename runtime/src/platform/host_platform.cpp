@@ -14,8 +14,11 @@
 #endif
 
 #if defined(__APPLE__)
+#include <TargetConditionals.h>
 #include <mach-o/dyld.h>
+#if !TARGET_OS_TV
 #include <pwd.h>
+#endif
 #endif
 
 namespace RuntimePlatform {
@@ -71,6 +74,17 @@ std::filesystem::path ApplicationDataDirectory(std::string_view applicationName)
         const std::filesystem::path directory = std::filesystem::path(rawPath) / applicationName;
         CoTaskMemFree(rawPath);
         return directory;
+    }
+#elif defined(__APPLE__) && TARGET_OS_TV
+    // tvOS apps must keep persistent state inside their app-container home.
+    // Do not fall back to getpwuid(): it may report a system account home which
+    // is outside the writable application sandbox. HOME is supplied by the
+    // platform; TMPDIR is a final sandboxed fallback if it is unexpectedly absent.
+    if (const char* home = std::getenv("HOME"); home && *home) {
+        return std::filesystem::path(home) / "Library" / "Application Support" / applicationName;
+    }
+    if (const char* temp = std::getenv("TMPDIR"); temp && *temp) {
+        return std::filesystem::path(temp) / applicationName;
     }
 #elif defined(__APPLE__)
     if (const char* home = std::getenv("HOME"); home && *home) {

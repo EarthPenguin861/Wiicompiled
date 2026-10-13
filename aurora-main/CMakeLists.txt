@@ -14,7 +14,12 @@ option(AURORA_ENABLE_CARD "Enable CARD implementation based on kabufuda" ON)
 option(AURORA_CACHE_USE_ZSTD "Compress WebGPU cache entries with zstd" ON)
 
 # Dependency versions
-set(AURORA_DAWN_VERSION "v20260603.191052" CACHE STRING "Dawn version tag (https://github.com/encounter/dawn-build/releases)")
+set(AURORA_DAWN_VERSION "v20260603.191052" CACHE STRING "Dawn binary release (https://github.com/encounter/dawn-build/releases)")
+# The binary release tag is not a tag in google/dawn itself. Pin the matching
+# upstream source revision separately for source builds (e.g. cross-compiles).
+# Keep this revision in sync with AURORA_DAWN_VERSION when updating Dawn.
+set(AURORA_DAWN_SOURCE_REV "13abc3bc8ea2d3c2050f9e77a12d012108ceee24" CACHE STRING
+    "Exact google/dawn source commit corresponding to AURORA_DAWN_VERSION")
 set(AURORA_SDL3_VERSION "3.4.4" CACHE STRING "SDL3 version tag (https://github.com/libsdl-org/SDL/releases)")
 set(AURORA_NOD_VERSION "v2.0.0-alpha.8" CACHE STRING "nod version tag (https://github.com/encounter/nod/releases)")
 set(AURORA_LIBUSB_VERSION "1.0.30" CACHE STRING "libusb version tag (https://github.com/libusb/libusb/releases)")

@@ -987,10 +987,25 @@ inline std::filesystem::path ResolveRelativeToConfig(const std::string& value) {
     return ResolveRelativeTo(ResolveConfigPath().parent_path(), value);
 }
 
-// The extracted DATA directory. Empty when nothing is configured.
+// The extracted DATA directory. A configured path always takes precedence.
+// tvOS product builds can bundle user-provided DATA at WiiCompiled.app/Assets/DATA.
+// Discover that read-only bundle resource when no dvd_root override exists.
 inline std::filesystem::path ResolvedDvdRoot() {
     const std::string configured = DvdRoot();
-    return configured.empty() ? std::filesystem::path{} : ResolveRelativeToConfig(configured);
+    if (!configured.empty()) {
+        return ResolveRelativeToConfig(configured);
+    }
+#if defined(__APPLE__)
+    if (const auto executableDirectory = ExecutableDirectory()) {
+        const auto bundledData = *executableDirectory / "Assets" / "DATA";
+        std::error_code ec;
+        if (std::filesystem::is_directory(bundledData / "files", ec) && !ec &&
+            std::filesystem::is_regular_file(bundledData / "sys" / "fst.bin", ec) && !ec) {
+            return bundledData;
+        }
+    }
+#endif
+    return {};
 }
 
 /// The canonical Retro Rewind installation the frontend owns, or "" when none is recorded.

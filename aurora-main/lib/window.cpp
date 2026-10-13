@@ -22,6 +22,9 @@
 #include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_pixels.h>
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 #if defined(_WIN32)
 #include <windows.h>
 #endif
@@ -225,8 +228,24 @@ bool SDLCALL lifecycle_event_watch(void*, SDL_Event* event) {
     break;
   case SDL_EVENT_WINDOW_RESTORED:
     g_backgrounded.store(false, std::memory_order_relaxed);
+    g_nativeResizePending.store(true, std::memory_order_release);
     break;
 #endif
+  // SDL's application lifecycle events are delivered through this event watch
+  // on Apple platforms. tvOS may background the app without a traditional
+  // window-minimized event; suspend presentation until the app is interactive
+  // again, then force a swapchain-size refresh before rendering resumes.
+  case SDL_EVENT_WILL_ENTER_BACKGROUND:
+  case SDL_EVENT_DID_ENTER_BACKGROUND:
+    g_backgrounded.store(true, std::memory_order_release);
+    break;
+  case SDL_EVENT_WILL_ENTER_FOREGROUND:
+    // Keep rendering suspended until the OS reports that the app is interactive.
+    break;
+  case SDL_EVENT_DID_ENTER_FOREGROUND:
+    g_backgrounded.store(false, std::memory_order_release);
+    g_nativeResizePending.store(true, std::memory_order_release);
+    break;
   default:
     break;
   }
@@ -431,8 +450,14 @@ bool create_window(AuroraBackend backend) {
     return false;
   }
   SDL_SetWindowMinimumSize(g_window, 640, 480);
+#if defined(__APPLE__) && TARGET_OS_TV
+  // tvOS only supports a full-screen application surface. Do not initialize
+  // runtime state as "windowed" merely because a desktop config was imported.
+  g_displayMode.store(AURORA_DISPLAY_MODE_BORDERLESS, std::memory_order_release);
+#else
   g_displayMode.store(g_config.startFullscreen ? AURORA_DISPLAY_MODE_BORDERLESS : AURORA_DISPLAY_MODE_WINDOWED,
                       std::memory_order_release);
+#endif
 #if defined(_WIN32)
   install_window_proc_hook();
 #endif
@@ -482,6 +507,17 @@ bool initialize() {
   /* We don't want to initialize anything input related here, otherwise the add events will get lost to the void */
   TRY(SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight"), "Error setting {}: {}", SDL_HINT_ORIENTATIONS,
       SDL_GetError());
+#if defined(__APPLE__) && TARGET_OS_TV
+  // The Siri Remote is more useful as a directional/select/back device for
+  // focus-based settings navigation than as a two-button game joystick. Leave
+  // actual gamepads available through SDL's normal GameController API.
+  TRY(SDL_SetHint(SDL_HINT_TV_REMOTE_AS_JOYSTICK, "0"),
+      "Error configuring the Apple TV remote: {}", SDL_GetError());
+  // Keep the Menu / controller buttons inside the app rather than allowing
+  // them to summon system UI while the game is running.
+  TRY(SDL_SetHint(SDL_HINT_APPLE_TV_CONTROLLER_UI_EVENTS, "0"),
+      "Error configuring Apple TV controller UI events: {}", SDL_GetError());
+#endif
   TRY(SDL_InitSubSystem(SDL_INIT_EVENTS | SDL_INIT_VIDEO), "Error initializing SDL: {}", SDL_GetError());
 
 #if !defined(_WIN32) && !defined(__APPLE__)
@@ -647,6 +683,11 @@ void set_fullscreen(bool fullscreen) {
 bool get_fullscreen() { return (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN) != 0u; }
 
 void set_display_mode(AuroraDisplayMode mode) {
+#if defined(__APPLE__) && TARGET_OS_TV
+  // Windowed and exclusive-display modes do not exist for tvOS apps; keep the
+  // API deterministic for callers that restore a desktop Config.toml.
+  mode = AURORA_DISPLAY_MODE_BORDERLESS;
+#endif
   if (g_window == nullptr) {
     return;
   }
