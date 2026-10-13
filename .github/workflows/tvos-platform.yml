@@ -102,8 +102,8 @@ jobs:
           test -f "$EXECUTABLE"
           echo "Linked dynamic dependencies:"
           DEPS="$(otool -L "$EXECUTABLE" | sed '1d')"
-          printf '%s\\n' "$DEPS"
-          if grep -E '(@rpath/)?libpng[^[:space:]]*|/Users/runner/work/[^[:space:]]*|_deps/[^[:space:]]*\\.dylib' <<<"$DEPS"; then
+          printf '%s\n' "$DEPS"
+          if grep -E '(@rpath/)?libpng[^[:space:]]*|/Users/runner/work/[^[:space:]]*|_deps/[^[:space:]]*\.dylib' <<<"$DEPS"; then
             echo "::error::tvOS executable contains an unbundled libpng or build-tree dylib dependency"
             exit 1
           fi
