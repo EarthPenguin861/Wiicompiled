@@ -1,5 +1,4 @@
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_main.h>
 
 #include <aurora/aurora.h>
 #include <aurora/event.h>
@@ -11,6 +10,10 @@
 #include <filesystem>
 #include <string>
 #include <system_error>
+
+// SDL redefines main to SDL_main on tvOS. Include it after other headers so
+// that macro only affects this source's actual entry-point declaration.
+#include <SDL3/SDL_main.h>
 
 // Asset-free Apple TV launch and Metal/WebGPU smoke app.
 //
