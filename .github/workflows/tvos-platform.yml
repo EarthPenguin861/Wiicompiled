@@ -19,7 +19,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: tvos-platform-${{ github.workflow }}-${{ github.ref }}
+  # A branch push and its PR update describe the same source; key them together
+  # to avoid building the expensive Dawn dependency graph twice per commit.
+  group: tvos-platform-${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -80,7 +82,16 @@ jobs:
 
       - name: Compile Aurora dependencies and native runtime sources
         run: |
-          cmake --build build-tvos-audit --parallel 3 --target mkw_tvos_native_compile
+          cmake --build build-tvos-audit --parallel 3 --target \
+            mkw_tvos_native_compile mkw_tvos_bundle_smoke
+
+      - name: Validate generated Apple TV app bundle metadata
+        run: |
+          bundle="build-tvos-audit/mkw_tvos_bundle_smoke.app"
+          test -d "$bundle"
+          plutil -lint "$bundle/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:0' "$bundle/Info.plist")" = "3"
+          file "$bundle/mkw_tvos_bundle_smoke"
 
       # The translated Mario Kart products need generated shards produced from
       # a user's own RMCP01 disc image. This audit intentionally excludes them.
