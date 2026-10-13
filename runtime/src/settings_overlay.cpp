@@ -39,6 +39,10 @@
 #include <shellapi.h>
 #endif
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #include <dolphin/pad.h>
 
 extern "C" void PAD_HLE_SetRumbleEnabled(bool enabled);
@@ -1359,12 +1363,17 @@ void DrawTopBar() {
         ImGui::EndMenu();
     }
 
+#if defined(__APPLE__) && TARGET_OS_TV
+    constexpr const char* hideLabel = "Hide (Menu)";
+#else
+    constexpr const char* hideLabel = "Hide (F10)";
+#endif
     const ImGuiStyle& style = ImGui::GetStyle();
-    const float hideWidth = ImGui::CalcTextSize("Hide (F10)").x + style.FramePadding.x * 2.0f;
+    const float hideWidth = ImGui::CalcTextSize(hideLabel).x + style.FramePadding.x * 2.0f;
     const float exitWidth = ImGui::CalcTextSize("X").x + style.FramePadding.x * 2.0f;
     ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(),
                                   ImGui::GetWindowWidth() - hideWidth - exitWidth - style.ItemSpacing.x - 8.0f));
-    if (ImGui::MenuItem("Hide (F10)")) {
+    if (ImGui::MenuItem(hideLabel)) {
         SetTopBarVisible(false);
     }
     if (ImGui::MenuItem("X")) {
@@ -1493,7 +1502,14 @@ void HandleEvents(const AuroraEvent* events) noexcept {
             } else if (g_topBarVisible) {
                 SetTopBarVisible(false);
             } else {
+#if defined(__APPLE__) && TARGET_OS_TV
+                // Siri Remote Menu/Escape opens the settings bar. The exit
+                // prompt remains reachable via the in-menu X action, while
+                // Menu behaves as a predictable back/close control.
+                SetTopBarVisible(true);
+#else
                 g_exitPromptOpen = true;
+#endif
             }
             ApplyInputBlockState();
         }

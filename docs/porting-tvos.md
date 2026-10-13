@@ -16,6 +16,7 @@ The target is deliberately device-only arm64 for now. SDL3 documents tvOS builds
 - The desktop macOS renderer uses Dawn's Metal backend. Upstream Dawn currently lists tvOS as unsupported, so the vendor build may need source-level changes before a Metal/WebGPU renderer can run.
 - `runtime/src/platform/host_platform.cpp` already has an Apple executable-path implementation and stores application data under `~/Library/Application Support`. tvOS sandboxing and app-container paths need an explicit design; desktop filesystem assumptions must not be carried over untested.
 - macOS's CoreAudio-based external-media activity monitor is excluded on tvOS; volume controls remain, but detecting other apps' audio is a desktop-only feature.
+- The branch now has an initial Siri Remote navigation path: tvOS configures SDL to expose directional/select/back events, enables ImGui keyboard navigation, and uses Menu/Escape to open/close the existing settings bar. This still needs validation on real Apple TV hardware and is not a replacement for a dedicated focus-polished TV interface.
 - A usable Apple TV app needs an app bundle, signing/provisioning, tvOS lifecycle handling, focus-based remote/controller UI, and a way to provide the user's own game assets within the app sandbox. The existing desktop setup/launcher flow is not a tvOS app installer.
 - The project currently expects a clean, user-provided PAL `RMCP01` game image. The port must continue to exclude Nintendo game data and must not add copyrighted assets to the repository or app package.
 
