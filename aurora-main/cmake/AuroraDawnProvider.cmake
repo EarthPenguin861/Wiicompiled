@@ -115,7 +115,9 @@ if (_aurora_dawn_provider STREQUAL "vendor")
     endif ()
 
     include(FetchContent)
-    if (NOT AURORA_DAWN_SOURCE_REV MATCHES "^[0-9a-fA-F]{40}$")
+    string(LENGTH "${AURORA_DAWN_SOURCE_REV}" _aurora_dawn_source_rev_length)
+    if (NOT _aurora_dawn_source_rev_length EQUAL 40 OR
+        NOT AURORA_DAWN_SOURCE_REV MATCHES "^[0-9a-fA-F]+$")
       message(FATAL_ERROR
         "AURORA_DAWN_SOURCE_REV must be a 40-character google/dawn commit SHA; got '${AURORA_DAWN_SOURCE_REV}'")
     endif ()
