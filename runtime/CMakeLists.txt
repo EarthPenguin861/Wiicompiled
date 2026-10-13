@@ -36,7 +36,8 @@ if(MKW_REQUESTED_TVOS)
     # target-level CXX_STANDARD. Pass the standard via CXX flags (not
     # CMAKE_REQUIRED_FLAGS, which also affects C probes such as SDL's pthread
     # checks and would incorrectly make those fail).
-    if(NOT CMAKE_CXX_FLAGS MATCHES "(^| )-std=c\+\+")
+    string(FIND "${CMAKE_CXX_FLAGS}" "-std=c++" _mkw_has_std_flag)
+    if(_mkw_has_std_flag EQUAL -1)
         string(APPEND CMAKE_CXX_FLAGS " -std=c++20")
     endif()
     message(STATUS "Configuring experimental WiiCompiled tvOS target (not yet a validated device port)")
