@@ -42,26 +42,37 @@ endfunction()
 # ── Auto: resolve provider based on platform availability ──
 set(_aurora_dawn_provider "${AURORA_DAWN_PROVIDER}")
 if (_aurora_dawn_provider STREQUAL "auto")
-  # Prebuilt Dawn packages available for: windows-{amd64,arm64}, linux-{x86_64,aarch64}, darwin-{arm64,x86_64}
-  set(_has_package FALSE)
-  if (WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|x86_64|ARM64|aarch64)$")
-    set(_has_package TRUE)
-  elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|aarch64)$")
-    set(_has_package TRUE)
-  elseif (APPLE AND (CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|x86_64)$" OR CMAKE_OSX_ARCHITECTURES MATCHES "^(arm64|x86_64)$"))
-    set(_has_package TRUE)
-  endif ()
-
-  if (_has_package)
-    set(_aurora_dawn_provider "package")
+  # No tvOS Dawn binary is published by the package provider. Never derive a
+  # "tvos-arm64" URL from APPLE + arm64: that would select a nonexistent
+  # desktop-style package. Source compilation is only a porting experiment;
+  # upstream's support matrix currently lists tvOS as unsupported.
+  if (CMAKE_SYSTEM_NAME STREQUAL "tvOS")
+    set(_aurora_dawn_provider "vendor")
+    message(WARNING
+      "aurora: tvOS has no prebuilt Dawn package; building Dawn from source. "
+      "Upstream does not currently support tvOS, so this is experimental and may fail.")
   else ()
-    set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL ON)
-    find_package(Dawn QUIET)
-    set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL OFF)
-    if (Dawn_FOUND)
-      set(_aurora_dawn_provider "system")
+    # Prebuilt packages available: Windows, Linux and desktop Darwin only.
+    set(_has_package FALSE)
+    if (WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|x86_64|ARM64|aarch64)$")
+      set(_has_package TRUE)
+    elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|aarch64)$")
+      set(_has_package TRUE)
+    elseif (APPLE AND (CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|x86_64)$" OR CMAKE_OSX_ARCHITECTURES MATCHES "^(arm64|x86_64)$"))
+      set(_has_package TRUE)
+    endif ()
+
+    if (_has_package)
+      set(_aurora_dawn_provider "package")
     else ()
-      set(_aurora_dawn_provider "vendor")
+      set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL ON)
+      find_package(Dawn QUIET)
+      set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL OFF)
+      if (Dawn_FOUND)
+        set(_aurora_dawn_provider "system")
+      else ()
+        set(_aurora_dawn_provider "vendor")
+      endif ()
     endif ()
   endif ()
   set(AURORA_DAWN_PROVIDER "${_aurora_dawn_provider}" CACHE STRING "" FORCE)
