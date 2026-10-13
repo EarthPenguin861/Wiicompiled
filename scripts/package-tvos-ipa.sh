@@ -93,5 +93,9 @@ echo "Created: $OUTPUT_IPA"
 echo "Bundle ID: $BUNDLE_ID"
 echo "Platform: $PLATFORM"
 echo "Architectures: $ARCHS"
-echo "Signing: $(/usr/bin/codesign -dv "$APP_PATH" 2>&1 | sed -n 's/^Signature=//p' | head -n 1 || true)"
-echo "The IPA is ready to upload to AtvLoadly; AtvLoadly must sign it for your Apple TV."
+SIGNATURE="$(/usr/bin/codesign -dv "$APP_PATH" 2>&1 | sed -n 's/^Signature=//p' | head -n 1 || true)"
+if [[ -z "$SIGNATURE" ]]; then
+    SIGNATURE="unsigned"
+fi
+echo "Signing: $SIGNATURE"
+echo "Upload this IPA to AtvLoadly; it can sign the app during installation."
