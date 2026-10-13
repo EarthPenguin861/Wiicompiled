@@ -10,6 +10,16 @@ if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
 endif()
 project(mkw_recompiled)
 
+# tvOS is not macOS. In particular, selecting an Apple Silicon architecture
+# must not silently route a tvOS configure through the desktop macOS settings:
+# the app lifecycle, signing, sandbox paths and renderer dependencies are not
+# validated for tvOS yet. Fail explicitly until the dedicated tvOS toolchain and
+# dependency path are implemented.
+if(CMAKE_SYSTEM_NAME STREQUAL "tvOS" OR CMAKE_OSX_SYSROOT MATCHES "[Tt][Vv][Oo][Ss]")
+    message(FATAL_ERROR
+        "WiiCompiled does not yet support tvOS. See docs/porting-tvos.md for the current porting status and blockers.")
+endif()
+
 if(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(Clang|AppleClang)$" OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
     message(FATAL_ERROR "WiiCompiled requires a 64-bit Clang toolchain")
 endif()
