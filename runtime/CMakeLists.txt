@@ -113,7 +113,13 @@ endif()
 # aurora-main and its third-party tree stay unaffected.
 set(MKW_PROJECT_COMPILE_DEFINITIONS NOMINMAX)
 
-set(CMAKE_CXX_STANDARD 17)
+# Dawn/Abseil's configure-time probes must see the same language mode as
+# the actual targets. Keep the existing C++17 desktop policy unchanged.
+if(MKW_PLATFORM_TVOS)
+    set(CMAKE_CXX_STANDARD 20)
+else()
+    set(CMAKE_CXX_STANDARD 17)
+endif()
 
 # Declared before the vendored libraries so the third-party block below can
 # branch on it and so cmake/NativePrebuilt.cmake is included after the names it
