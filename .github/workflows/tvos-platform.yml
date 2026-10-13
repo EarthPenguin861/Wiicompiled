@@ -21,7 +21,7 @@ permissions:
 concurrency:
   # A branch push and its PR update describe the same source; key them together
   # to avoid building the expensive Dawn dependency graph twice per commit.
-  group: tvos-platform-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: tvos-platform-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
