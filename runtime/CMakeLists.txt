@@ -32,6 +32,10 @@ if(MKW_REQUESTED_TVOS)
         "Require the selected C++ standard for the tvOS build" FORCE)
     set(CMAKE_CXX_EXTENSIONS OFF CACHE BOOL
         "Disable compiler-specific C++ language extensions for tvOS" FORCE)
+    # CMake's check_cxx_source_compiles() does not consistently inherit the
+    # target-level CXX_STANDARD property in nested dependency configure checks.
+    # CMAKE_REQUIRED_FLAGS is explicitly consumed by these probes.
+    set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -std=c++20")
     message(STATUS "Configuring experimental WiiCompiled tvOS target (not yet a validated device port)")
 endif()
 
