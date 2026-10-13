@@ -43,7 +43,27 @@ Apple TV HD is the first compatibility target, not a performance guarantee. Its 
 
 This is a local build path. It does not upload a game dump to GitHub and does not put Nintendo assets into source control.
 
-1. Use a Mac with Xcode (including the tvOS SDK), CMake 3.25+, Ninja, Clang, .NET 8 and Python 3.12. Dawn's pinned generator currently fails on Python 3.14, so explicitly select Python 3.12.
+### Recommended one-command build
+
+Use a Mac with Xcode (including the tvOS SDK), CMake 3.25+, Ninja, .NET 8 and Python 3.12. Dawn's pinned generator currently fails on Python 3.14, so explicitly select Python 3.12.
+
+With your clean PAL `RMCP01` image and `nodtool` available, the helper extracts the disc, runs the project translator, configures the tvOS device SDK, builds WiiCompiled, bundles your local extracted DATA, and creates an unsigned IPA:
+
+```bash
+bash scripts/build-tvos-local.sh \
+  --game "/path/to/RMCP01.iso" \
+  --nodtool "./nodtool"
+```
+
+If you have already extracted `Assets/main.dol`, `Assets/StaticR.rel`, and `Assets/DATA`, run `bash scripts/build-tvos-local.sh` without `--game` or `--nodtool`. If you already have the translator output and `generated/build_shards/shards.cmake`, use `--skip-translation`.
+
+The output defaults to `dist/WiiCompiled-tvOS.ipa`. The IPA is **unsigned**: upload it to AtvLoadly on the Raspberry Pi and use AtvLoadly's signing/install flow. The helper never uploads the disc image or extracted assets to GitHub.
+
+### Manual build steps
+
+The following steps describe the underlying stages and are useful for debugging individual steps.
+
+1. Follow `docs/building-macos.md` through disc extraction and the translator steps. Use a clean, legally dumped PAL `RMCP01` image. Stop before its macOS configure/build step. The generated translator output is required for the real game target.
 
 2. Follow `docs/building-macos.md` through disc extraction and the translator steps. Use a clean PAL `RMCP01` image that you dumped yourself. Stop before its macOS configure/build step. The generated translator output is required for the real game target.
 
@@ -72,4 +92,4 @@ bash scripts/package-tvos-ipa.sh build-tvos/WiiCompiled.app dist/WiiCompiled-tvO
 
 5. Upload that private IPA to your AtvLoadly instance on the Raspberry Pi and let AtvLoadly sign/install it with your own allowed signing method. The packaging script only zips the app; it does not sign, create provisioning profiles, or claim the IPA is installable before AtvLoadly signs it.
 
-The IPA includes the user-provided extracted DATA and may be large. Keep it private. The CI tests use synthetic app data only and never build this private game-product bundle.
+The IPA includes the user-provided extracted DATA and may be large. Keep it private. CI separately builds an asset-free tvOS Metal smoke app to exercise the real app-bundle linker and packaging path; it never builds the private game-product bundle or handles your disc data.
