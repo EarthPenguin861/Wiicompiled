@@ -11,7 +11,7 @@ The target is deliberately device-only arm64 for now. SDL3 documents tvOS builds
 ## Findings
 
 - The translated game/runtime is C++17/20 and uses Aurora for Wii/GameCube APIs, SDL3 for window/input, and Dawn/WebGPU for graphics.
-- The first Apple TV deployment floor is tvOS 13.0 because the platform SDK marks `std::filesystem::path` unavailable before that version; tvOS 11 cannot compile this runtime’s path APIs without a separate filesystem abstraction.
+- The deployment floor is tvOS 14.0: the SDK marks `std::filesystem::path` unavailable before tvOS 13, and Dawn's current `WorkerThread.cpp` calls `std::condition_variable::wait` / `notify_all`, which the tvOS SDK marks unavailable before tvOS 14.
 - SDL3 documents tvOS as a CMake target. The port can vendor the pinned SDL source rather than reuse a desktop binary.
 - The desktop macOS renderer uses Dawn's Metal backend. Upstream Dawn currently lists tvOS as unsupported, so the vendor build may need source-level changes before a Metal/WebGPU renderer can run.
 - `runtime/src/platform/host_platform.cpp` already has an Apple executable-path implementation and stores application data under `~/Library/Application Support`. tvOS sandboxing and app-container paths need an explicit design; desktop filesystem assumptions must not be carried over untested.
