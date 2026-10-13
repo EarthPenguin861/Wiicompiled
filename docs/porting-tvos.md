@@ -4,7 +4,7 @@ This document tracks the initial investigation for running WiiCompiled on Apple 
 
 ## Current status
 
-**Still not a working tvOS port.** The branch now has an experimental device-SDK platform path, an Apple TV app-bundle template, a Dawn provider guard, and a compile-only CI check for platform utilities. The full game runtime has not yet been built or launched on tvOS.
+**Still not a working tvOS port.** The branch now has an experimental device-SDK path, a tvOS app-bundle template, a Dawn source-build path, SDL lifecycle and Siri Remote navigation changes, and compile-only CI coverage. The platform test suite passes, and the native runtime sources plus SDL/Aurora/Dawn dependency graph have compiled against the Apple TV device SDK. The generated Mario Kart product has not been linked, signed, installed, or launched; actual rendering remains unverified.
 
 The target is deliberately device-only arm64 for now. SDL3 documents tvOS builds, but upstream Dawn's current support matrix explicitly does not support tvOS. The CMake provider therefore avoids trying to download a nonexistent tvOS prebuilt and attempts an exploratory source build instead. This is dependency-spike work, not evidence that Dawn compiles or renders correctly on Apple TV.
 
@@ -23,11 +23,12 @@ The target is deliberately device-only arm64 for now. SDL3 documents tvOS builds
 ## Suggested implementation order
 
 1. **Build-system foundation (in progress):** select a tvOS device SDK, use a conservative arm64 CPU baseline, bundle the executable as an Apple TV app, and never route tvOS to desktop Dawn artifacts.
-2. **Dependency spike:** the new compile-only CI check covers the platform utility layer. Next, get the full Aurora/SDL/Dawn dependency graph through a tvOS SDK build, then patch Dawn where the source build fails. A successful compile is not enough; Metal rendering must be exercised on-device.
-3. **Runtime platform layer:** use tvOS-safe app-container paths, handle suspend/resume and foreground/background transitions, and remove desktop-only assumptions (keyboard shortcuts, window sizing, filesystem writes outside the container).
-4. **TV interaction:** provide focus navigation and controller-first settings; the F10 desktop settings bar is not an adequate Apple TV interface.
-5. **Packaging:** build a tvOS app target with correct bundle metadata, entitlements, signing, and a documented install/deploy workflow.
-6. **Device validation:** test first on Apple TV HD, then profile and validate Apple TV 4K separately. Do not claim either device works until the app launches, renders, accepts input, persists settings, and resumes correctly.
+2. **Native compile + app-bundle contract:** the platform suite and native SDL/Aurora/Dawn/runtime source compile pass in CI. A separate smoke target now checks the tvOS app-bundle layout and plist metadata without game data.
+3. **Renderer/device milestone:** upstream Dawn lists tvOS as unsupported. Its source and runtime compile, but Metal/WebGPU device initialization, rendering, input, and resume behavior must still be validated on Apple TV hardware; compile success alone is not renderer support.
+4. **Runtime platform layer:** finish validating tvOS app-container paths and suspend/resume behavior; remove any remaining desktop-only assumptions.
+5. **TV interaction:** polish the initial focus/remote navigation, gamepad routing, and on-screen settings flow. Current remote handling is a starting point, not a final TV UX.
+6. **Packaging:** build the generated game product as an Apple TV app with correct bundle metadata, entitlements, signing, and a documented install/deploy workflow.
+7. **Device validation:** test first on Apple TV HD, then profile and validate Apple TV 4K separately. Do not claim either device works until the app launches, renders, accepts input, persists settings, and resumes correctly.
 
 ## Hardware target notes
 
