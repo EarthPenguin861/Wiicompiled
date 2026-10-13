@@ -75,23 +75,23 @@ if (( SKIP_TRANSLATION )); then
         fail "--game/--nodtool cannot be combined with --skip-translation"
     [[ -f "$ROOT/generated/build_shards/shards.cmake" ]] ||
         fail "missing generated/build_shards/shards.cmake; omit --skip-translation to run the translator"
-else
-    translation_args=(
-        --workspace "$ROOT"
-        --profile base
-        --translate-only
-        --parallel "$PARALLEL"
-    )
-    if [[ -n "$GAME" ]]; then
-        translation_args+=(--game "$GAME" --nodtool "$NODTOOL")
-    fi
-    printf '\n== Extract/translate the local base game; skip the macOS native build ==\n'
-    bash "$ROOT/Launcher/local-build-macos.command" "${translation_args[@]}"
+elif [[ -n "$GAME" ]]; then
+    # Extract once, then validate DATA before starting the potentially lengthy
+    # translation pass. The translator's macOS helper will reuse these files.
+    printf '\n== Extract and verify the clean PAL RMCP01 image ==\n'
+    bash "$ROOT/Launcher/macos/extract-disc.command" \
+        --game "$GAME" --assets-dir "$ROOT/Assets" --nodtool "$NODTOOL"
 fi
 
 DVD_DATA_DIR="$(cd "$DVD_DATA_DIR" 2>/dev/null && pwd)" || fail "DVD DATA directory not found: $DVD_DATA_DIR"
 [[ -d "$DVD_DATA_DIR/files" ]] || fail "DATA directory must contain files/: $DVD_DATA_DIR"
 [[ -f "$DVD_DATA_DIR/sys/fst.bin" ]] || fail "DATA directory must contain sys/fst.bin: $DVD_DATA_DIR"
+
+if (( ! SKIP_TRANSLATION )); then
+    printf '\n== Translate the local base game; skip the macOS native build ==\n'
+    bash "$ROOT/Launcher/local-build-macos.command" \
+        --workspace "$ROOT" --profile base --translate-only --parallel "$PARALLEL"
+fi
 
 PYTHON_EXECUTABLE="$(python3.12 -c 'import sys; print(sys.executable)')"
 mkdir -p "$BUILD_DIR" "$(dirname "$OUTPUT_IPA")"
