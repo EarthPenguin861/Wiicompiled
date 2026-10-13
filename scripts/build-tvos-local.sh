@@ -70,11 +70,9 @@ command -v clang >/dev/null 2>&1 || fail "Apple Clang was not found"
 command -v clang++ >/dev/null 2>&1 || fail "Apple Clang++ was not found"
 xcrun --sdk appletvos --show-sdk-path >/dev/null 2>&1 || fail "the tvOS SDK is unavailable; install/select Xcode and its tvOS platform"
 
-DVD_DATA_DIR="$(cd "$DVD_DATA_DIR" 2>/dev/null && pwd)" || fail "DVD DATA directory not found: $DVD_DATA_DIR"
-[[ -d "$DVD_DATA_DIR/files" ]] || fail "DATA directory must contain files/: $DVD_DATA_DIR"
-[[ -f "$DVD_DATA_DIR/sys/fst.bin" ]] || fail "DATA directory must contain sys/fst.bin: $DVD_DATA_DIR"
-
 if (( SKIP_TRANSLATION )); then
+    [[ -z "$GAME" && -z "$NODTOOL" ]] ||
+        fail "--game/--nodtool cannot be combined with --skip-translation"
     [[ -f "$ROOT/generated/build_shards/shards.cmake" ]] ||
         fail "missing generated/build_shards/shards.cmake; omit --skip-translation to run the translator"
 else
@@ -90,6 +88,10 @@ else
     printf '\n== Extract/translate the local base game; skip the macOS native build ==\n'
     bash "$ROOT/Launcher/local-build-macos.command" "${translation_args[@]}"
 fi
+
+DVD_DATA_DIR="$(cd "$DVD_DATA_DIR" 2>/dev/null && pwd)" || fail "DVD DATA directory not found: $DVD_DATA_DIR"
+[[ -d "$DVD_DATA_DIR/files" ]] || fail "DATA directory must contain files/: $DVD_DATA_DIR"
+[[ -f "$DVD_DATA_DIR/sys/fst.bin" ]] || fail "DATA directory must contain sys/fst.bin: $DVD_DATA_DIR"
 
 PYTHON_EXECUTABLE="$(python3.12 -c 'import sys; print(sys.executable)')"
 mkdir -p "$BUILD_DIR" "$(dirname "$OUTPUT_IPA")"
