@@ -359,6 +359,11 @@ endif()
 # a registration file is silently never compiled and never errors. The stale-glob
 # failure mode is worth far more than the milliseconds.
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.cpp")
+if(MKW_PLATFORM_TVOS)
+    # External-audio activity detection uses macOS CoreAudio process APIs;
+    # tvOS doesn't ship CoreAudio.framework's desktop process API.
+    list(REMOVE_ITEM SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/external_audio_macos.cpp")
+endif()
 if(MKW_PLATFORM_MACOS OR MKW_PLATFORM_TVOS)
     list(REMOVE_ITEM SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/guest_flat_memory.cpp")
     if(MKW_PLATFORM_MACOS_ARM64 OR MKW_PLATFORM_TVOS)
