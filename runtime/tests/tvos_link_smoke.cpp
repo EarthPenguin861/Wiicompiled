@@ -3,6 +3,7 @@
 
 #include <aurora/aurora.h>
 #include <aurora/event.h>
+#include <imgui.h>
 
 #include <chrono>
 #include <cstdio>
@@ -13,10 +14,9 @@
 
 // Asset-free Apple TV launch and Metal/WebGPU smoke app.
 //
-// This target exists so CI can verify that the vendored SDL/Dawn/Aurora stack
-// can link into a real tvOS app bundle without putting the translated Mario Kart
-// product or user-owned game data onto CI. It can also be installed temporarily
-// to confirm that tvOS enters through SDL and creates an Aurora Metal surface.
+// It verifies the platform app entry point, SDL window, Dawn/Metal renderer,
+// frame presentation, and sandbox paths without compiling or bundling any
+// translated Mario Kart code or user-owned game data.
 int main(int, char**) {
     const char* home = std::getenv("HOME");
     const char* temp = std::getenv("TMPDIR");
@@ -42,7 +42,7 @@ int main(int, char**) {
     const std::string userPath = root.string();
     const std::string cachePath = cache.string();
     AuroraConfig config{};
-    config.appName = "WiiCompiled tvOS Metal smoke";
+    config.appName = "WiiCompiled tvOS graphics smoke";
     config.userPath = userPath.c_str();
     config.cachePath = cachePath.c_str();
     config.desiredBackend = BACKEND_METAL;
@@ -55,8 +55,11 @@ int main(int, char**) {
 
     const AuroraInfo info = aurora_initialize(0, nullptr, &config);
     if (info.initializationStatus != AURORA_INITIALIZATION_SUCCESS) {
-        std::fprintf(stderr, "[tvOS-smoke] Aurora/Metal initialization failed: %s\n",
-                     info.initializationError != nullptr ? info.initializationError : "unknown error");
+        // Copy the diagnostic immediately: SDL owns this string and another SDL
+        // call could invalidate it.
+        const std::string message =
+            info.initializationError != nullptr ? info.initializationError : "unknown error";
+        std::fprintf(stderr, "[tvOS-smoke] Aurora/Metal initialization failed: %s\n", message.c_str());
         return EXIT_FAILURE;
     }
 
@@ -64,9 +67,9 @@ int main(int, char**) {
                  static_cast<int>(info.backend), info.windowSize.native_fb_width,
                  info.windowSize.native_fb_height);
 
-    // Present a few blank frames so a device run exercises surface acquisition and
-    // presentation, then quit automatically. The Menu/Escape event exits sooner.
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
+    // Keep a visible result on screen long enough for a person to inspect it.
+    // Menu/Escape exits immediately; otherwise it closes itself after 30 seconds.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
     bool running = true;
     while (running && std::chrono::steady_clock::now() < deadline) {
         const AuroraEvent* events = aurora_update();
@@ -80,9 +83,27 @@ int main(int, char**) {
                 break;
             }
         }
-        if (running && aurora_begin_frame()) {
-            aurora_end_frame();
+        if (!running || !aurora_begin_frame()) {
+            SDL_Delay(16);
+            continue;
         }
+
+        ImGui::SetNextWindowPos(ImVec2(64.0f, 64.0f), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(960.0f, 420.0f), ImGuiCond_Always);
+        ImGui::Begin("WiiCompiled tvOS graphics smoke test", nullptr,
+                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                         ImGuiWindowFlags_NoCollapse);
+        ImGui::TextUnformatted("Apple TV app entry point: OK");
+        ImGui::TextUnformatted("SDL3 fullscreen window: OK");
+        ImGui::TextUnformatted("Aurora + Dawn Metal initialization: OK");
+        ImGui::Text("Surface: %u x %u",
+                    info.windowSize.native_fb_width, info.windowSize.native_fb_height);
+        ImGui::Separator();
+        ImGui::TextWrapped("This is an asset-free port test, not Mario Kart Wii.");
+        ImGui::TextWrapped("If this screen appears, the app launched and the Metal/WebGPU renderer initialized.");
+        ImGui::TextWrapped("Press Menu / Escape to close, or wait 30 seconds.");
+        ImGui::End();
+        aurora_end_frame();
         SDL_Delay(16);
     }
 
